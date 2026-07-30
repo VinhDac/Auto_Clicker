@@ -22,6 +22,7 @@ import json
 import time
 import random
 import threading
+import subprocess
 import ctypes
 import urllib.request
 
@@ -256,6 +257,24 @@ def enable_dpi(root):
         pass
 
 
+def center_window(win, w=None, h=None):
+    """Đặt cửa sổ ra giữa màn hình. Nếu w/h không cho, tự lấy theo nội dung."""
+    win.update_idletasks()
+    if not w:
+        w = win.winfo_width()
+        if w <= 1:
+            w = win.winfo_reqwidth()
+    if not h:
+        h = win.winfo_height()
+        if h <= 1:
+            h = win.winfo_reqheight()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    x = max(0, (sw - w) // 2)
+    y = max(0, (sh - h) // 2 - 30)
+    win.geometry(f"{w}x{h}+{x}+{y}")
+
+
 # ---------------- Overlay crosshair chọn 1 điểm ----------------
 class PointSelector:
     def __init__(self, root, callback):
@@ -282,7 +301,9 @@ class PointSelector:
         self.canvas.create_text(self.vw // 2, 30, fill="white", font=("Segoe UI", 15),
                                 text="Di chuột tới điểm cần chọn  •  Click / F8 / Enter để chốt  •  Esc để huỷ")
         self.canvas.bind("<Motion>", self._move)
-        self.canvas.bind("<ButtonPress-1>", lambda e: self._pick(e.x, e.y))
+        # Chốt bằng THẢ chuột: overlay nuốt trọn cú click (cả nhấn lẫn thả),
+        # không để lọt thêm 1 left-click xuống game phía dưới.
+        self.canvas.bind("<ButtonRelease-1>", lambda e: self._pick(e.x, e.y))
         self.win.bind("<Escape>", lambda e: self._finish(None))
         self.win.bind("<F8>", self._key_pick)
         self.win.bind("<Return>", self._key_pick)
@@ -336,6 +357,60 @@ class PointSelector:
         self.callback(pt)
 
 
+# ---------------- Overlay xem lại các điểm đã chọn ----------------
+class ReviewOverlay:
+    def __init__(self, root, points, on_close):
+        """points: list of (x, y, label, color) theo toạ độ tuyệt đối."""
+        self.on_close = on_close
+        u = ctypes.windll.user32
+        self.vx, self.vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)
+        self.vw, self.vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)
+        self.win = tk.Toplevel(root)
+        self.win.overrideredirect(True)
+        self.win.geometry(f"{self.vw}x{self.vh}+{self.vx}+{self.vy}")
+        self.win.attributes("-topmost", True)
+        try:
+            self.win.attributes("-alpha", 0.35)
+        except Exception:
+            pass
+        c = tk.Canvas(self.win, bg="gray10", highlightthickness=0)
+        c.pack(fill="both", expand=True)
+        c.create_text(self.vw // 2, 34, fill="white", font=("Segoe UI", 16),
+                      text="Xem lại các điểm đã chọn  •  Click hoặc Esc để đóng")
+        for (x, y, label, color) in points:
+            cx, cy = x - self.vx, y - self.vy
+            r = 16
+            c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=color, width=3)
+            c.create_line(cx - r - 8, cy, cx + r + 8, cy, fill=color, width=2)
+            c.create_line(cx, cy - r - 8, cx, cy + r + 8, fill=color, width=2)
+            t = c.create_text(cx + r + 10, cy - 10, anchor="nw", fill="white",
+                              font=("Segoe UI", 12, "bold"), text=label)
+            b = c.bbox(t)
+            if b:
+                bg = c.create_rectangle(b[0] - 3, b[1] - 2, b[2] + 3, b[3] + 2,
+                                        fill=color, outline="")
+                c.tag_lower(bg, t)
+        self.win.bind("<ButtonRelease-1>", lambda e: self._close())
+        self.win.bind("<Escape>", lambda e: self._close())
+        self.win.bind("<Key>", lambda e: self._close())
+        self.win.focus_force()
+        try:
+            self.win.grab_set()
+        except Exception:
+            pass
+
+    def _close(self):
+        try:
+            self.win.grab_release()
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+        self.on_close()
+
+
 # ---------------- Hộp thoại thêm/sửa hành động ----------------
 class ActionEditor(tk.Toplevel):
     def __init__(self, master, app, action=None):
@@ -377,6 +452,7 @@ class ActionEditor(tk.Toplevel):
         ttk.Button(btns, text="Lưu", command=self._save).pack(side="right")
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
         self._render()
+        center_window(self)
 
     def _render(self):
         for w in self.body.winfo_children():
@@ -473,10 +549,25 @@ class SettingsDialog(tk.Toplevel):
         self.upd_status.grid(row=0, column=1, sticky="w", padx=8)
         self._refresh_count()
 
+        setup = ttk.LabelFrame(pad, text="Cài đặt nhanh (máy mới)", padding=8)
+        setup.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(setup, text="📌 Tạo shortcut ở Desktop", command=self._make_shortcut).grid(
+            row=0, column=0, sticky="w")
+        self.sc_status = ttk.Label(setup, text="")
+        self.sc_status.grid(row=1, column=0, sticky="w", pady=(4, 0))
+
         btns = ttk.Frame(pad)
-        btns.grid(row=6, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        btns.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(btns, text="Lưu & đóng", command=self._save).pack(side="right")
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
+        center_window(self)
+
+    def _make_shortcut(self):
+        ok, info = self.app.create_desktop_shortcut()
+        if ok:
+            self.sc_status.config(text=f"Đã tạo '{os.path.basename(info)}' trên Desktop.")
+        else:
+            self.sc_status.config(text=f"Lỗi: {info}")
 
     def _game_key(self):
         for k, v in GAMES.items():
@@ -534,7 +625,7 @@ class AutoClickerApp:
         self.all_mods = load_mods(self.settings["game"])
         self.stop_flag = threading.Event()
         self.hotkey_handle = None
-        root.geometry("680x820")
+        center_window(root, 680, 820)
         self._build_ui()
         self.refresh()
         self._refresh_mods()
@@ -549,6 +640,7 @@ class AutoClickerApp:
         self.title_lbl = ttk.Label(head, text="Auto Clicker", font=("Segoe UI", 12, "bold"))
         self.title_lbl.pack(side="left")
         ttk.Button(head, text="⚙ Cài đặt", command=self.open_settings).pack(side="right")
+        ttk.Button(head, text="👁 Xem điểm", command=self.review_points).pack(side="right", padx=(0, 6))
 
         top = ttk.Frame(self.root, padding=(10, 6))
         top.pack(fill="both", expand=True)
@@ -660,6 +752,36 @@ class AutoClickerApp:
         self.all_mods = load_mods(self.settings["game"])
         self._refresh_mods()
 
+    def create_desktop_shortcut(self):
+        """Tạo shortcut 'Auto Clicker' ra Desktop (dùng PowerShell, không cần thư viện thêm)."""
+        try:
+            if getattr(sys, "frozen", False):
+                target = sys.executable                 # bản .exe: trỏ thẳng exe
+                args = ""
+                workdir = os.path.dirname(sys.executable)
+            else:
+                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                target = pyw if os.path.exists(pyw) else sys.executable
+                args = f'"{os.path.abspath(__file__)}"'
+                workdir = app_dir()
+
+            def q(s):
+                return "'" + str(s).replace("'", "''") + "'"
+
+            ps = ("$d=[Environment]::GetFolderPath('Desktop');"
+                  "$lnk=Join-Path $d 'Auto Clicker.lnk';"
+                  "$W=New-Object -ComObject WScript.Shell;"
+                  "$s=$W.CreateShortcut($lnk);"
+                  f"$s.TargetPath={q(target)};"
+                  + (f"$s.Arguments={q(args)};" if args else "")
+                  + f"$s.WorkingDirectory={q(workdir)};"
+                  "$s.Save()")
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           creationflags=0x08000000, check=True, timeout=20)
+            return True, "Auto Clicker.lnk"
+        except Exception as e:
+            return False, str(e)
+
     # ---- actions ----
     def refresh(self):
         self.listbox.delete(0, tk.END)
@@ -748,6 +870,24 @@ class AutoClickerApp:
     def clear_hover(self):
         self.hover_point = None
         self._update_hover_label()
+
+    # ---- xem lại điểm đã chọn ----
+    def review_points(self):
+        pts = []
+        for i, a in enumerate(self.actions, 1):
+            if "point" in a:
+                x, y = a["point"]
+                pts.append((x, y, f"{i}. {ACTION_LABELS[a['type']]}", "#3aa0ff"))
+        if self.hover_point:
+            pts.append((self.hover_point[0], self.hover_point[1], "Rê chuột (đọc mod)", "#2ecc71"))
+        if not pts:
+            messagebox.showinfo("Chưa có điểm",
+                                "Chưa có điểm nào để xem (thêm hành động click hoặc chọn điểm rê chuột).")
+            return
+        self.status.set("Đang xem điểm... (click hoặc Esc để đóng)")
+        self.root.withdraw()
+        ReviewOverlay(self.root, pts,
+                      lambda: (self.root.deiconify(), self.status.set("Sẵn sàng.")))
 
     # ---- mod picker & điều kiện ----
     def _refresh_mods(self, *_):
