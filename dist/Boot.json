@@ -1,0 +1,42 @@
+{
+  "name": "template",
+  "game": "poe2",
+  "actions": [
+    {
+      "type": "right_click",
+      "point": [
+        74,
+        446
+      ]
+    },
+    {
+      "type": "delay",
+      "min_ms": 1000,
+      "max_ms": 2000
+    },
+    {
+      "type": "left_click",
+      "point": [
+        310,
+        423
+      ]
+    }
+  ],
+  "max_loops": 1000,
+  "start_delay": 3,
+  "hover_point": [
+    292,
+    468
+  ],
+  "stop_enabled": true,
+  "conditions": [
+    {
+      "mod": "# to maximum Life",
+      "tier": 2
+    },
+    {
+      "mod": "# to maximum Life",
+      "tier": null
+    }
+  ]
+}

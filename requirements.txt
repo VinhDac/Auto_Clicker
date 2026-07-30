@@ -1,6 +1,4 @@
 pyautogui
 keyboard
+pyperclip
 plyer
-opencv-python
-mss
-numpy
