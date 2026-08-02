@@ -85,8 +85,16 @@ def set_accent(color):
     THEME["on_accent"] = best_fg(color)
 
 
-def dark_titlebar(win):
-    """Làm tối thanh tiêu đề (Windows 10 1903+). Không có thì bỏ qua, không sao."""
+def dark_titlebar(win, remap=False):
+    """Làm tối thanh tiêu đề (Windows 10 1903+). Không hỗ trợ thì bỏ qua, không sao.
+
+    Đặt thuộc tính DWM thôi là CHƯA ĐỦ — Windows không vẽ lại khung ngay. Có 2 cách
+    ép vẽ lại, và mỗi loại cửa sổ hợp một cách (đã đo bằng cách lấy mẫu pixel):
+      - remap=False: SetWindowPos(FRAMECHANGED) — ăn với HỘP THOẠI, không nháy,
+        không phá grab. Nhưng KHÔNG ăn với cửa sổ chính.
+      - remap=True : ẩn rồi hiện lại — cách duy nhất ăn với CỬA SỔ CHÍNH. Chỉ dùng
+        lúc khởi động nên người dùng không thấy nháy.
+    """
     try:
         win.update_idletasks()
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
@@ -94,6 +102,15 @@ def dark_titlebar(win):
         # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE
         ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val),
                                                    ctypes.sizeof(val))
+        if remap:
+            win.withdraw()
+            win.update_idletasks()
+            win.deiconify()
+        else:
+            SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER = 0x20, 0x2, 0x1, 0x4
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
     except Exception:
         pass
 
@@ -446,6 +463,7 @@ class TemplatePicker(tk.Toplevel):
         self._reload()
         restyle_tree(self)
         center_window(self, 460, 380)
+        dark_titlebar(self)
         self.after(80, self.grab_set)
 
     def _reload(self):
@@ -555,6 +573,7 @@ class ActionEditor(tk.Toplevel):
         # chỉ vẽ lại nội dung chứ cửa sổ không tự phóng lại.
         restyle_tree(self)
         center_window(self, 520, 720)
+        dark_titlebar(self)
 
     def _render(self):
         for w in self.body.winfo_children():
@@ -836,6 +855,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
         restyle_tree(self)
         center_window(self)
+        dark_titlebar(self)
 
     # ---- màu nhấn ----
     def _apply_accent(self, color):
@@ -1965,11 +1985,8 @@ def main():
     set_accent(s.get("accent") or THEME["accent"])
     apply_theme(root)
     AutoClickerApp(root)
-    dark_titlebar(root)
-    # ép vẽ lại 1 lần để thanh tiêu đề đổi màu ngay (không thì phải đợi tương tác)
-    root.withdraw()
-    root.update_idletasks()
-    root.deiconify()
+    root.update()          # cửa sổ phải vẽ xong thì đặt thuộc tính DWM mới ăn
+    dark_titlebar(root, remap=True)
     root.mainloop()
 
 
