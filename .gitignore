@@ -2,6 +2,7 @@
 build/
 dist/
 *.spec
+AutoClicker*.zip
 
 # ===== Python =====
 __pycache__/

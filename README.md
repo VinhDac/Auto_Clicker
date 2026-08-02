@@ -10,9 +10,11 @@ App đọc mod của item bằng cách rê chuột vào item và bấm `Ctrl+C` 
 
 ## Tải về
 
-> ### [⬇ Tải AutoClicker.exe (bản mới nhất)](../../releases/latest)
+> ### [⬇ Tải bản mới nhất (.zip)](../../releases/latest)
 
-File chạy thẳng, **không cần cài Python**, không cần cài gì thêm.
+Giải nén ra rồi bấm đúp `AutoClicker.exe`. **Giữ nguyên cả thư mục** — các file bên cạnh là thư viện cần để chạy.
+
+**Không cần cài Python**, không cần cài gì thêm.
 
 Lần đầu chạy Windows sẽ cảnh báo — [xem cách xử lý bên dưới](#windows-báo-chặn-thì-làm-sao).
 
@@ -67,9 +69,13 @@ Bấm **▶ CHẠY**, chuyển sang cửa sổ game trong lúc đếm ngược. 
 
 File chưa mua chứng chỉ ký số nên SmartScreen cảnh báo. Bấm **More info** → **Run anyway**.
 
-### Phần mềm diệt virus báo động
+### Defender xoá mất file khi vừa tải xong
 
-App dùng hook bàn phím toàn cục (cho phím dừng `F6`) và điều khiển chuột — **đúng đặc điểm kỹ thuật của keylogger**, nên Windows Defender và các phần mềm diệt virus hay báo nhầm.
+Đây là lý do bản phát hành là **file `.zip`** chứ không phải một file `.exe` duy nhất.
+
+Bản gộp-1-file bị Windows Defender báo là `Trojan:Win32/Wacatac.H!ml` và **xoá ngay khi tải**. Đuôi `!ml` nghĩa là phát hiện bằng **suy đoán/máy học, không phải khớp chữ ký virus thật** — lỗi báo nhầm rất phổ biến với file đóng gói bằng PyInstaller, do kiểu 1-file phải tự giải nén ra thư mục tạm khi chạy nên bị coi là hành vi đáng ngờ.
+
+**Bản `.zip` không có hành vi đó nên Defender không chặn** (đã quét kiểm chứng bằng chính Defender). Nếu bạn lỡ tải bản `.exe` và bị xoá, hãy tải bản `.zip` thay thế.
 
 App **không** gửi dữ liệu đi đâu. Toàn bộ mã nguồn nằm ngay trong repo này — bạn có thể tự đọc, và [tự build lại](#tự-build-từ-mã-nguồn) nếu không muốn tin file có sẵn.
 
