@@ -21,9 +21,11 @@ if exist dist\AutoClicker rmdir /S /Q dist\AutoClicker
 echo [2/4] Dang build...
 python -m PyInstaller ^
   --onedir --windowed --name AutoClicker --noconfirm --clean ^
+  --icon assets\logo.ico ^
   --exclude-module cv2 --exclude-module numpy --exclude-module mss --exclude-module PIL ^
   --add-data "data\mods_poe1.txt;." ^
   --add-data "data\mods_poe2.txt;." ^
+  --add-data "assets\logo.ico;." ^
   --hidden-import plyer.platforms.win.notification ^
   auto_clicker_gui.py
 

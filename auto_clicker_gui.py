@@ -251,6 +251,16 @@ def apply_theme(root):
             restyle_tree(w)
 
 
+def set_window_icon(win):
+    """Đặt icon cho cửa sổ. Không có file thì Tk tự dùng icon mặc định của nó."""
+    try:
+        p = core.resource_path("logo.ico")
+        if os.path.exists(p):
+            win.iconbitmap(p)
+    except Exception:
+        pass
+
+
 def enable_dpi(root):
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -462,6 +472,7 @@ class TemplatePicker(tk.Toplevel):
 
         self._reload()
         restyle_tree(self)
+        set_window_icon(self)
         center_window(self, 460, 380)
         dark_titlebar(self)
         self.after(80, self.grab_set)
@@ -572,6 +583,7 @@ class ActionEditor(tk.Toplevel):
         # — loại nhiều nội dung nhất) — tránh bị cắt chữ khi đổi loại, vì đổi Loại
         # chỉ vẽ lại nội dung chứ cửa sổ không tự phóng lại.
         restyle_tree(self)
+        set_window_icon(self)
         center_window(self, 520, 720)
         dark_titlebar(self)
 
@@ -854,6 +866,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btns, text="Lưu & đóng", command=self._save).pack(side="right")
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
         restyle_tree(self)
+        set_window_icon(self)
         center_window(self)
         dark_titlebar(self)
 
@@ -1985,6 +1998,7 @@ def main():
     set_accent(s.get("accent") or THEME["accent"])
     apply_theme(root)
     AutoClickerApp(root)
+    set_window_icon(root)
     root.update()          # cửa sổ phải vẽ xong thì đặt thuộc tính DWM mới ăn
     dark_titlebar(root, remap=True)
     root.mainloop()
