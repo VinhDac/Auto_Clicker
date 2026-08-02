@@ -47,7 +47,7 @@ THEME = {
     "text":      "#e8e8e8",
     "muted":     "#9a9a9a",
     "dim":       "#7a7a7a",
-    "accent":    "#ff7a1a",   # đổi được trong Cài đặt
+    "accent":    "#ffa657",   # đổi được trong Cài đặt (cam dịu — cam gắt hại mắt trên nền tối)
     "on_accent": "#000000",   # tự tính theo độ sáng của accent
     "ok":        "#3fb950",
     "err":       "#f85149",
@@ -56,8 +56,11 @@ THEME = {
 
 # Màu nhấn chọn sẵn (vẫn chọn được màu tuỳ ý qua nút "Tuỳ chọn…")
 ACCENT_PRESETS = {
-    "Cam": "#ff7a1a",
-    "Xanh dương": "#0078d4",
+    "Cam (dịu)": "#ffa657",       # mặc định — dễ nhìn nhất trên nền tối
+    "Cam (vừa)": "#f0883e",
+    "Cam (trầm)": "#e0913f",
+    "Cam (gắt)": "#ff7a1a",
+    "Xanh dương": "#4a9eff",
     "Lục": "#3fb950",
     "Tím": "#a371f7",
     "Đỏ": "#f85149",
