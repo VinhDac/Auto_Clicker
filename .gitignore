@@ -1,0 +1,22 @@
+# ===== Kết quả build (KHÔNG commit — file .exe phát hành qua GitHub Releases) =====
+build/
+dist/
+*.spec
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== Dữ liệu của người dùng (sinh ra lúc chạy, mỗi máy một khác) =====
+settings.json
+templates/
+
+# ===== Linh tinh =====
+*.bundle
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
