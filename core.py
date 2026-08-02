@@ -56,6 +56,7 @@ SETTINGS_DEFAULT = {
     "hover_ms": 250,
     "copy_keys": "ctrl+c",
     "stop_hotkey": "f6",
+    "accent": "#ff7a1a",     # màu nhấn của giao diện (đổi trong Cài đặt)
 }
 
 

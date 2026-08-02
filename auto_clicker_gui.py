@@ -24,7 +24,7 @@ import threading
 import ctypes
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, messagebox, simpledialog, colorchooser
 
 # Lõi (không phụ thuộc giao diện) — xem core.py
 import core
@@ -35,6 +35,201 @@ from core import (app_dir, load_settings, save_settings, load_mods, fetch_mod_te
                   normalize_process, make_loop_step, make_action_step, is_loop_step,
                   step_title, step_display, validate_process, action_display,
                   cond_display, parse_hold_keys, ProcessRunner)
+
+# ================= GIAO DIỆN TỐI =================
+# Một chỗ duy nhất giữ màu. Trước đây màu bị hardcode rải rác 8 chỗ, 3 bảng khác nhau.
+THEME = {
+    "bg":        "#202020",   # nền cửa sổ
+    "surface":   "#2b2b2b",   # panel / khung
+    "field":     "#2d2d2d",   # ô nhập, danh sách
+    "raised":    "#383838",   # nút thường
+    "border":    "#3f3f3f",
+    "text":      "#e8e8e8",
+    "muted":     "#9a9a9a",
+    "dim":       "#7a7a7a",
+    "accent":    "#ff7a1a",   # đổi được trong Cài đặt
+    "on_accent": "#000000",   # tự tính theo độ sáng của accent
+    "ok":        "#3fb950",
+    "err":       "#f85149",
+    "warn":      "#d29922",
+}
+
+# Màu nhấn chọn sẵn (vẫn chọn được màu tuỳ ý qua nút "Tuỳ chọn…")
+ACCENT_PRESETS = {
+    "Cam": "#ff7a1a",
+    "Xanh dương": "#0078d4",
+    "Lục": "#3fb950",
+    "Tím": "#a371f7",
+    "Đỏ": "#f85149",
+    "Vàng": "#d29922",
+    "Hồng": "#db61a2",
+    "Xanh ngọc": "#39c5cf",
+}
+
+
+def best_fg(hex_color):
+    """Chữ đen hay trắng thì dễ đọc hơn trên nền màu này? (tránh nút cam chữ trắng khó đọc)"""
+    try:
+        h = hex_color.lstrip("#")
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return "#000000"
+    return "#000000" if (0.2126 * r + 0.7152 * g + 0.0722 * b) > 140 else "#ffffff"
+
+
+def set_accent(color):
+    THEME["accent"] = color
+    THEME["on_accent"] = best_fg(color)
+
+
+def dark_titlebar(win):
+    """Làm tối thanh tiêu đề (Windows 10 1903+). Không có thì bỏ qua, không sao."""
+    try:
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        val = ctypes.c_int(1)
+        # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val),
+                                                   ctypes.sizeof(val))
+    except Exception:
+        pass
+
+
+def style_tk_widget(w):
+    """Tô màu cho widget tk CỔ ĐIỂN (Listbox/Text/Menu/Entry/Frame/Canvas) — mấy loại
+    này không theo ttk nên phải đặt màu tay."""
+    T = THEME
+    try:
+        cls = w.winfo_class()
+    except Exception:
+        return
+    try:
+        if cls == "Listbox":
+            w.configure(bg=T["field"], fg=T["text"], borderwidth=0,
+                        highlightthickness=0, activestyle="none",
+                        selectbackground=T["accent"], selectforeground=T["on_accent"])
+        elif cls == "Text":
+            w.configure(bg=T["field"], fg=T["text"], borderwidth=0,
+                        highlightthickness=0, insertbackground=T["text"],
+                        selectbackground=T["accent"], selectforeground=T["on_accent"])
+        elif cls == "Menu":
+            w.configure(bg=T["surface"], fg=T["text"], borderwidth=0,
+                        activebackground=T["accent"], activeforeground=T["on_accent"],
+                        disabledforeground=T["dim"])
+        elif cls == "Entry":
+            w.configure(bg=T["field"], fg=T["text"], insertbackground=T["text"],
+                        highlightthickness=1, highlightbackground=T["border"],
+                        highlightcolor=T["accent"], borderwidth=0)
+        elif cls in ("Frame", "Toplevel", "Tk"):
+            w.configure(bg=T["bg"])
+        elif cls == "Label":
+            w.configure(bg=T["bg"], fg=T["text"])
+    except tk.TclError:
+        pass
+
+
+def restyle_tree(w):
+    """Tô lại toàn bộ widget tk cổ điển đang có (dùng khi đổi màu nhấn lúc đang chạy)."""
+    style_tk_widget(w)
+    try:
+        for c in w.winfo_children():
+            restyle_tree(c)
+    except Exception:
+        pass
+
+
+def apply_theme(root):
+    """Áp bảng màu tối lên toàn bộ ttk + widget tk đang tồn tại.
+    Gọi lại được bất cứ lúc nào (vd sau khi đổi màu nhấn)."""
+    T = THEME
+    s = ttk.Style(root)
+    # BẮT BUỘC dùng 'clam': theme mặc định 'vista' của Windows vẽ nút/ô nhập bằng
+    # ảnh native nên BỎ QUA màu ta đặt (đã đo: nút vẫn xám, ô nhập vẫn trắng).
+    try:
+        s.theme_use("clam")
+    except tk.TclError:
+        pass
+
+    BG, SF, FD, RS = T["bg"], T["surface"], T["field"], T["raised"]
+    BD, TX, MU, AC = T["border"], T["text"], T["muted"], T["accent"]
+    ON = T["on_accent"]
+
+    s.configure(".", background=BG, foreground=TX, fieldbackground=FD,
+                bordercolor=BD, lightcolor=BD, darkcolor=BD,
+                troughcolor=BG, focuscolor=AC, insertcolor=TX)
+
+    s.configure("TFrame", background=BG)
+    s.configure("Card.TFrame", background=SF)
+    s.configure("TLabel", background=BG, foreground=TX)
+    s.configure("Muted.TLabel", background=BG, foreground=MU)
+    s.configure("Title.TLabel", background=BG, foreground=TX,
+                font=("Segoe UI", 12, "bold"))
+    s.configure("Ok.TLabel", background=BG, foreground=T["ok"])
+    s.configure("Err.TLabel", background=BG, foreground=T["err"])
+    s.configure("Warn.TLabel", background=BG, foreground=T["warn"])
+
+    s.configure("TLabelframe", background=BG, bordercolor=BD, relief="solid", borderwidth=1)
+    s.configure("TLabelframe.Label", background=BG, foreground=MU)
+
+    s.configure("TButton", background=RS, foreground=TX, bordercolor=BD,
+                borderwidth=1, focusthickness=0, padding=(8, 4))
+    s.map("TButton",
+          background=[("pressed", BD), ("active", BD), ("disabled", SF)],
+          foreground=[("disabled", T["dim"])])
+
+    s.configure("Accent.TButton", background=AC, foreground=ON,
+                bordercolor=AC, borderwidth=0, padding=(10, 5))
+    s.map("Accent.TButton",
+          background=[("pressed", AC), ("active", AC), ("disabled", SF)],
+          foreground=[("disabled", T["dim"])])
+
+    s.configure("Danger.TButton", background=RS, foreground=T["err"], bordercolor=BD)
+    s.map("Danger.TButton", background=[("active", BD)],
+          foreground=[("disabled", T["dim"])])
+
+    s.configure("TEntry", fieldbackground=FD, foreground=TX, bordercolor=BD,
+                insertcolor=TX, padding=3)
+    s.map("TEntry", bordercolor=[("focus", AC)])
+    s.configure("TCombobox", fieldbackground=FD, background=RS, foreground=TX,
+                bordercolor=BD, arrowcolor=TX, padding=3)
+    s.map("TCombobox", fieldbackground=[("readonly", FD)], bordercolor=[("focus", AC)])
+    s.configure("TMenubutton", background=RS, foreground=TX, bordercolor=BD,
+                arrowcolor=TX, padding=(8, 4))
+    s.map("TMenubutton", background=[("active", BD)])
+
+    s.configure("TCheckbutton", background=BG, foreground=TX,
+                indicatorcolor=FD, focuscolor=BG)
+    s.map("TCheckbutton", indicatorcolor=[("selected", AC)],
+          background=[("active", BG)])
+
+    s.configure("TNotebook", background=BG, bordercolor=BD, borderwidth=0)
+    s.configure("TNotebook.Tab", background=BG, foreground=MU,
+                padding=(12, 5), borderwidth=0)
+    s.map("TNotebook.Tab", background=[("selected", SF)],
+          foreground=[("selected", AC)], expand=[("selected", [0, 0, 0, 0])])
+
+    s.configure("TPanedwindow", background=BG)
+    s.configure("Sash", background=BD, gripcount=0)
+    s.configure("TSeparator", background=BD)
+    s.configure("Vertical.TScrollbar", background=RS, troughcolor=BG,
+                bordercolor=BG, arrowcolor=MU, borderwidth=0)
+    s.map("Vertical.TScrollbar", background=[("active", BD)])
+    s.configure("Horizontal.TScrollbar", background=RS, troughcolor=BG,
+                bordercolor=BG, arrowcolor=MU, borderwidth=0)
+
+    # màu nền chung cho các hộp thoại/cửa sổ do Tk vẽ
+    try:
+        root.configure(bg=BG)
+        root.option_add("*background", BG)
+        root.option_add("*foreground", TX)
+    except Exception:
+        pass
+
+    restyle_tree(root)
+    for w in root.winfo_children():
+        if isinstance(w, tk.Toplevel):
+            restyle_tree(w)
+
 
 def enable_dpi(root):
     try:
@@ -86,7 +281,7 @@ class PointSelector:
             self.win.attributes("-alpha", 0.30)
         except Exception:
             pass
-        self.canvas = tk.Canvas(self.win, cursor="none", bg="gray10", highlightthickness=0)
+        self.canvas = tk.Canvas(self.win, cursor="none", bg=THEME["bg"], highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.vline = self.canvas.create_line(0, 0, 0, self.vh, fill="red", width=2)
         self.hline = self.canvas.create_line(0, 0, self.vw, 0, fill="red", width=2)
@@ -94,7 +289,7 @@ class PointSelector:
         self.coord_bg = self.canvas.create_rectangle(0, 0, 0, 0, fill="black", outline="")
         self.coord = self.canvas.create_text(0, 0, fill="yellow", anchor="nw",
                                              font=("Consolas", 13, "bold"), text="")
-        self.canvas.create_text(self.vw // 2, 30, fill="white", font=("Segoe UI", 15),
+        self.canvas.create_text(self.vw // 2, 30, fill=THEME["text"], font=("Segoe UI", 15),
                                 text="Di chuột tới điểm cần chọn  •  Click / F8 / Enter để chốt  •  Esc để huỷ")
         self.canvas.bind("<Motion>", self._move)
         # Chốt bằng THẢ chuột: overlay nuốt trọn cú click (cả nhấn lẫn thả),
@@ -169,9 +364,9 @@ class ReviewOverlay:
             self.win.attributes("-alpha", 0.35)
         except Exception:
             pass
-        c = tk.Canvas(self.win, bg="gray10", highlightthickness=0)
+        c = tk.Canvas(self.win, bg=THEME["bg"], highlightthickness=0)
         c.pack(fill="both", expand=True)
-        c.create_text(self.vw // 2, 34, fill="white", font=("Segoe UI", 16),
+        c.create_text(self.vw // 2, 34, fill=THEME["text"], font=("Segoe UI", 16),
                       text="Xem lại các điểm đã chọn  •  Click hoặc Esc để đóng")
         for (x, y, label, color) in points:
             cx, cy = x - self.vx, y - self.vy
@@ -179,7 +374,7 @@ class ReviewOverlay:
             c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=color, width=3)
             c.create_line(cx - r - 8, cy, cx + r + 8, cy, fill=color, width=2)
             c.create_line(cx, cy - r - 8, cx, cy + r + 8, fill=color, width=2)
-            t = c.create_text(cx + r + 10, cy - 10, anchor="nw", fill="white",
+            t = c.create_text(cx + r + 10, cy - 10, anchor="nw", fill=THEME["text"],
                               font=("Segoe UI", 12, "bold"), text=label)
             b = c.bbox(t)
             if b:
@@ -235,7 +430,7 @@ class TemplatePicker(tk.Toplevel):
         sb.pack(side="right", fill="y")
         self.box.bind("<Double-Button-1>", lambda e: self._ok())
 
-        self.empty_lbl = ttk.Label(pad, text="", foreground="gray")
+        self.empty_lbl = ttk.Label(pad, text="", style="Muted.TLabel")
         self.empty_lbl.pack(anchor="w", pady=(4, 0))
 
         btns = ttk.Frame(pad)
@@ -246,6 +441,7 @@ class TemplatePicker(tk.Toplevel):
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
 
         self._reload()
+        restyle_tree(self)
         center_window(self, 460, 380)
         self.after(80, self.grab_set)
 
@@ -314,7 +510,7 @@ class ActionEditor(tk.Toplevel):
         self.name_var = tk.StringVar(value=((action or {}).get("name") or ""))
         ttk.Entry(top, textvariable=self.name_var).grid(row=1, column=1, sticky="ew", padx=6, pady=(6, 0))
         ttk.Label(top, text="(tuỳ chọn — để trống thì dùng mô tả tự sinh)",
-                  foreground="gray").grid(row=2, column=1, sticky="w", padx=6)
+                  style="Muted.TLabel").grid(row=2, column=1, sticky="w", padx=6)
         top.columnconfigure(1, weight=1)
         self.body = ttk.Frame(self, padding=10)
         self.body.pack(fill="x")
@@ -354,11 +550,13 @@ class ActionEditor(tk.Toplevel):
         # Kích thước cố định, đủ rộng cho MỌI loại hành động (kể cả "Kiểm tra mod"
         # — loại nhiều nội dung nhất) — tránh bị cắt chữ khi đổi loại, vì đổi Loại
         # chỉ vẽ lại nội dung chứ cửa sổ không tự phóng lại.
+        restyle_tree(self)
         center_window(self, 520, 720)
 
     def _render(self):
         for w in self.body.winfo_children():
             w.destroy()
+        self.after_idle(lambda: restyle_tree(self.body))   # widget vừa dựng -> tô lại
         t = self.type_var.get()
         if t == "check_mod":
             self._render_check_mod()
@@ -378,7 +576,7 @@ class ActionEditor(tk.Toplevel):
             ttk.OptionMenu(self.body, self.button_var, self.button_var.get(),
                            "Trái", "Phải").grid(row=0, column=3, sticky="w")
             ttk.Label(self.body, text="(nhiều phím thì nối bằng dấu +, vd: ctrl+shift)",
-                      foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 6))
+                      style="Muted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 6))
             ttk.Label(self.body, text="X:").grid(row=2, column=0, sticky="w")
             ttk.Entry(self.body, textvariable=self.x_var, width=8).grid(row=2, column=1, sticky="w")
             ttk.Label(self.body, text="Y:").grid(row=2, column=2, sticky="w", padx=(10, 0))
@@ -399,7 +597,7 @@ class ActionEditor(tk.Toplevel):
 
     def _render_check_mod(self):
         ttk.Label(self.body, text='Item sẽ "biến mất" nếu khớp — dừng cả Loop, coi như đã đạt.',
-                  foreground="gray").pack(anchor="w")
+                  style="Muted.TLabel").pack(anchor="w")
 
         row = ttk.Frame(self.body)
         row.pack(fill="x", pady=(6, 0))
@@ -433,7 +631,7 @@ class ActionEditor(tk.Toplevel):
                        *HYBRID_LABELS.values()).pack(side="left", padx=(4, 0))
         r3b = ttk.Frame(self.body)
         r3b.pack(fill="x", pady=(2, 0))
-        ttk.Label(r3b, foreground="gray",
+        ttk.Label(r3b, style="Muted.TLabel",
                   text="mod hybrid = 1 affix cho nhiều dòng stat (vd Armour + Energy Shield);\n"
                        "tier của họ hybrid KHÁC tier của mod thuần cùng tên").pack(anchor="w")
         ttk.Button(r3b, text="➕ Thêm điều kiện ↓", command=self._add_condition).pack(
@@ -604,8 +802,26 @@ class SettingsDialog(tk.Toplevel):
             ttk.Label(pad, text=lbl).grid(row=i, column=0, sticky="w", pady=3)
             ttk.Entry(pad, textvariable=var, width=12).grid(row=i, column=1, sticky="w", pady=3)
 
+        # ---- Màu nhấn (đổi được, áp ngay không cần khởi động lại) ----
+        col = ttk.LabelFrame(pad, text="Giao diện", padding=8)
+        col.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Label(col, text="Màu nhấn:").grid(row=0, column=0, sticky="w")
+        cur = THEME["accent"]
+        name = next((n for n, c in ACCENT_PRESETS.items() if c.lower() == cur.lower()),
+                    "Tuỳ chỉnh")
+        self.accent_var = tk.StringVar(value=name)
+        self._accent_color = cur
+        ttk.OptionMenu(col, self.accent_var, name, *ACCENT_PRESETS.keys(),
+                       command=self._pick_preset_accent).grid(row=0, column=1, sticky="w", padx=6)
+        self.swatch = tk.Label(col, text="   ", bg=cur, relief="solid", borderwidth=1)
+        self.swatch.grid(row=0, column=2, sticky="w", padx=(2, 6))
+        ttk.Button(col, text="Tuỳ chọn…", command=self._pick_custom_accent).grid(
+            row=0, column=3, sticky="w")
+        ttk.Label(col, text="(đổi là thấy ngay)", style="Muted.TLabel").grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(4, 0))
+
         upd = ttk.LabelFrame(pad, text="Danh sách mod", padding=8)
-        upd.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        upd.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         ttk.Button(upd, text="⟳ Cập nhật từ mạng", command=self._update_mods).grid(row=0, column=0)
         self.upd_status = ttk.Label(upd, text="")
         self.upd_status.grid(row=0, column=1, sticky="w", padx=8)
@@ -615,7 +831,30 @@ class SettingsDialog(tk.Toplevel):
         btns.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(btns, text="Lưu & đóng", command=self._save).pack(side="right")
         ttk.Button(btns, text="Huỷ", command=self.destroy).pack(side="right", padx=6)
+        restyle_tree(self)
         center_window(self)
+
+    # ---- màu nhấn ----
+    def _apply_accent(self, color):
+        self._accent_color = color
+        set_accent(color)
+        self.swatch.config(bg=color)
+        apply_theme(self.app.root)      # cả cửa sổ chính
+        restyle_tree(self)              # và chính hộp thoại này
+        self.app.refresh_steps()        # vẽ lại danh sách để ăn màu chọn mới
+        self.app.refresh()
+
+    def _pick_preset_accent(self, name=None):
+        color = ACCENT_PRESETS.get(self.accent_var.get())
+        if color:
+            self._apply_accent(color)
+
+    def _pick_custom_accent(self):
+        rgb, hexv = colorchooser.askcolor(color=self._accent_color,
+                                          title="Chọn màu nhấn", parent=self)
+        if hexv:
+            self.accent_var.set("Tuỳ chỉnh")
+            self._apply_accent(hexv)
 
     def _game_key(self):
         for k, v in GAMES.items():
@@ -656,6 +895,7 @@ class SettingsDialog(tk.Toplevel):
             "hover_ms": hov,
             "copy_keys": self.copy_var.get().strip() or "ctrl+c",
             "stop_hotkey": self.hotkey_var.get().strip() or "f6",
+            "accent": self._accent_color,
         })
         save_settings(self.app.settings)
         self.app.apply_settings()
@@ -680,6 +920,7 @@ class AutoClickerApp:
         self._pump_after_id = None
         center_window(root, 980, 780)
         self._build_ui()
+        apply_theme(root)              # tô màu sau khi widget đã dựng xong
         self.refresh_steps()
         self.select_step(0)
         self.apply_settings()
@@ -774,7 +1015,7 @@ class AutoClickerApp:
         ttk.Button(sb2, text="🗑 Xoá", width=8, command=self.delete_step).pack(side="left", padx=4)
         ttk.Button(sb2, text="⬆", width=4, command=lambda: self.move_step(-1)).pack(side="left")
         ttk.Button(sb2, text="⬇", width=4, command=lambda: self.move_step(1)).pack(side="left", padx=2)
-        ttk.Label(lwrap, foreground="gray",
+        ttk.Label(lwrap, style="Muted.TLabel",
                   text="🔁 = Action_Loop (lặp)   •   ⚡ = hành động lẻ (chạy 1 lần)").pack(
             anchor="w", pady=(6, 0))
 
@@ -790,7 +1031,7 @@ class AutoClickerApp:
 
         prob = ttk.Frame(self.bottom_nb, padding=8)
         self.bottom_nb.add(prob, text="⚠ Vấn đề")
-        self.prob_lbl = ttk.Label(prob, text="", foreground="gray")
+        self.prob_lbl = ttk.Label(prob, text="", style="Muted.TLabel")
         self.prob_lbl.pack(anchor="w")
         pfr = ttk.Frame(prob)
         pfr.pack(fill="x", pady=(4, 0))
@@ -808,7 +1049,7 @@ class AutoClickerApp:
         self.bottom_nb.add(logf, text="📋 Nhật ký chạy")
         lrow = ttk.Frame(logf)
         lrow.pack(fill="x")
-        ttk.Label(lrow, text="Diễn biến từng bước khi chạy:", foreground="gray").pack(side="left")
+        ttk.Label(lrow, text="Diễn biến từng bước khi chạy:", style="Muted.TLabel").pack(side="left")
         ttk.Button(lrow, text="🗑 Xoá nhật ký", command=self.clear_log).pack(side="right")
         tfr = ttk.Frame(logf)
         tfr.pack(fill="both", expand=True, pady=(4, 0))
@@ -818,10 +1059,10 @@ class AutoClickerApp:
         tsb.config(command=self.log_text.yview)
         self.log_text.pack(side="left", fill="both", expand=True)
         tsb.pack(side="right", fill="y")
-        self.log_text.tag_config("ok", foreground="#1e8449")
-        self.log_text.tag_config("warn", foreground="#b9770e")
-        self.log_text.tag_config("err", foreground="#c0392b")
-        self.log_text.tag_config("dim", foreground="gray45")
+        self.log_text.tag_config("ok", foreground=THEME["ok"])
+        self.log_text.tag_config("warn", foreground=THEME["warn"])
+        self.log_text.tag_config("err", foreground=THEME["err"])
+        self.log_text.tag_config("dim", foreground=THEME["dim"])
 
         bar = ttk.Frame(self.root, padding=10)
         bar.pack(fill="x")
@@ -832,9 +1073,11 @@ class AutoClickerApp:
         ttk.Label(bar, text="   Đếm ngược (s):").pack(side="left")
         self.start_var = tk.StringVar(value="3")
         ttk.Entry(bar, textvariable=self.start_var, width=5).pack(side="left", padx=4)
-        self.run_btn = ttk.Button(bar, text="▶ CHẠY", command=self.start_run)
+        self.run_btn = ttk.Button(bar, text="▶ CHẠY", style="Accent.TButton",
+                                  command=self.start_run)
         self.run_btn.pack(side="right")
-        self.stop_btn = ttk.Button(bar, text="■ DỪNG", command=self.stop_run, state="disabled")
+        self.stop_btn = ttk.Button(bar, text="■ DỪNG", style="Danger.TButton",
+                                   command=self.stop_run, state="disabled")
         self.stop_btn.pack(side="right", padx=6)
 
         self.status = tk.StringVar(value="Sẵn sàng.")
@@ -888,7 +1131,7 @@ class AutoClickerApp:
         ttk.Separator(col, orient="horizontal").pack(fill="x", pady=6)
         ttk.Button(col, text="🔁 Loop từ đây", width=12, command=self.set_loop_start).pack(pady=2)
 
-        ttk.Label(f, foreground="gray",
+        ttk.Label(f, style="Muted.TLabel",
                   text='Xám + "(1 lần)" = chạy 1 lần lúc đầu   •   🔁 = lặp mỗi vòng   •   '
                        'thêm "🔍 Kiểm tra mod" để Loop tự dừng khi đạt').pack(anchor="w", pady=(6, 0))
 
@@ -897,7 +1140,7 @@ class AutoClickerApp:
         f = ttk.LabelFrame(self.detail, text="Sửa hành động lẻ", padding=8)
         self.action_pane = f
         ttk.Label(f, text="Bước này là 1 hành động lẻ — chạy đúng 1 lần rồi sang bước kế tiếp.",
-                  foreground="gray").pack(anchor="w")
+                  style="Muted.TLabel").pack(anchor="w")
         self.single_lbl = ttk.Label(f, text="", font=("Segoe UI", 10, "bold"), wraplength=460,
                                     justify="left")
         self.single_lbl.pack(anchor="w", pady=(10, 12))
@@ -1087,7 +1330,7 @@ class AutoClickerApp:
             suffix = "" if looping else "   (1 lần)"
             self.listbox.insert(tk.END, f"{prefix}{i}.  {action_display(a)}{suffix}")
             if not looping:
-                self.listbox.itemconfig(idx, fg="gray50")
+                self.listbox.itemconfig(idx, fg=THEME["dim"])
         self.refresh_steps()
 
     # ---- đổi tên hành động (F2 / nút Đổi tên) ----
@@ -1163,9 +1406,9 @@ class AutoClickerApp:
             icon = "✖" if p["severity"] == "error" else "⚠"
             self.prob_box.insert(tk.END, f"{icon} {p['message']}")
             if p["severity"] == "error":
-                self.prob_box.itemconfig(self.prob_box.size() - 1, fg="#c0392b")
+                self.prob_box.itemconfig(self.prob_box.size() - 1, fg=THEME["err"])
         if not self._problems:
-            self.prob_lbl.config(text="✔ Không có vấn đề — sẵn sàng chạy.", foreground="#1e8449")
+            self.prob_lbl.config(text="✔ Không có vấn đề — sẵn sàng chạy.", foreground=THEME["ok"])
         else:
             parts = []
             if n_err:
@@ -1173,7 +1416,7 @@ class AutoClickerApp:
             if n_warn:
                 parts.append(f"{n_warn} cảnh báo")
             self.prob_lbl.config(text=" · ".join(parts) + "   (bấm 1 dòng để nhảy tới chỗ sai)",
-                                 foreground="#c0392b" if n_err else "#b9770e")
+                                 foreground=THEME["err"] if n_err else THEME["warn"])
         # Hiện số lượng ngay trên nhãn tab, khỏi phải mở tab mới biết
         try:
             n = len(self._problems)
@@ -1369,7 +1612,7 @@ class AutoClickerApp:
             pt = a.get("point")
             if not pt:
                 return
-            color = "#2ecc71" if a.get("type") == "check_mod" else "#3aa0ff"
+            color = THEME["ok"] if a.get("type") == "check_mod" else THEME["accent"]
             pts.append((pt[0], pt[1], label, color))
 
         for si, st in enumerate(self.steps, 1):
@@ -1715,7 +1958,15 @@ class AutoClickerApp:
 def main():
     root = tk.Tk()
     enable_dpi(root)
+    s = load_settings()
+    set_accent(s.get("accent") or THEME["accent"])
+    apply_theme(root)
     AutoClickerApp(root)
+    dark_titlebar(root)
+    # ép vẽ lại 1 lần để thanh tiêu đề đổi màu ngay (không thì phải đợi tương tác)
+    root.withdraw()
+    root.update_idletasks()
+    root.deiconify()
     root.mainloop()
 
 
