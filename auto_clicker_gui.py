@@ -837,11 +837,33 @@ class ActionEditor(tk.Toplevel):
         # chỉ vẽ lại nội dung chứ cửa sổ không tự phóng lại.
         restyle_tree(self)
         set_window_icon(self)
-        # Cao đủ cho loại NHIỀU nội dung nhất (Abyss: 2 bảng + danh sách mod).
-        # Cố định cho mọi loại vì đổi Loại chỉ vẽ lại phần ruột, cửa sổ không tự
-        # phóng theo — để nhỏ là bị cắt chữ.
-        center_window(self, 520, 880)
+        self._fit_window(center=True)
         dark_titlebar(self)
+
+    # Bề rộng CỐ ĐỊNH cho mọi loại: loại rộng nhất cần 470px nên vẫn dư, mà giữ
+    # nguyên bề rộng thì đổi Loại cửa sổ chỉ co giãn theo chiều dọc, nhìn êm —
+    # co cả hai chiều sẽ giật qua giật lại.
+    WIDTH = 520
+
+    def _fit_window(self, center=False):
+        """Cho cửa sổ vừa khít nội dung của loại hành động đang chọn.
+
+        Mỗi loại cần chiều cao khác nhau rất xa (Delay 191px, Abyss 784px). Trước
+        đây đóng đinh 880 cho tất cả -> loại nhỏ trống huếch tới 689px. Hỏi thẳng
+        Tk xem nội dung cần bao nhiêu thì không còn con số nào để lệch về sau."""
+        self.update_idletasks()
+        h = self.winfo_reqheight()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        h = min(h, sh - 80)                 # màn hình thấp thì đừng tràn khỏi desktop
+        if center:
+            x = max(0, (sw - self.WIDTH) // 2)
+            y = max(0, (sh - h) // 2 - 30)
+        else:
+            # Đổi Loại thì GIỮ NGUYÊN chỗ cửa sổ đang đứng, chỉ đổi chiều cao —
+            # nhảy về giữa màn hình mỗi lần đổi Loại rất khó chịu.
+            x = max(0, min(self.winfo_x(), sw - self.WIDTH))
+            y = max(0, min(self.winfo_y(), sh - h - 40))
+        self.geometry(f"{self.WIDTH}x{h}+{x}+{y}")
 
     def _render(self):
         for w in self.body.winfo_children():
@@ -891,6 +913,9 @@ class ActionEditor(tk.Toplevel):
             ttk.Entry(self.body, textvariable=self.min_var, width=8).grid(row=0, column=1)
             ttk.Label(self.body, text="Max ms:").grid(row=0, column=2, sticky="w", padx=(10, 0))
             ttk.Entry(self.body, textvariable=self.max_var, width=8).grid(row=0, column=3)
+        # Vẽ lại ruột xong thì co giãn cửa sổ theo. Bỏ dòng này là quay lại đúng
+        # cái bệnh cũ: đổi Loại mà cửa sổ đứng im -> loại nhỏ trống, loại to bị cắt.
+        self._fit_window()
 
     def _render_check_mod(self):
         ttk.Label(self.body, text='Item sẽ "biến mất" nếu khớp — dừng cả Loop, coi như đã đạt.',

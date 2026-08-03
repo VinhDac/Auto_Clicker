@@ -6,6 +6,7 @@ Gốc bệnh cũ: ttk.Combobox ở nhánh mod_click -> MapPopdown -> ttk::global
 máy ngừng nhận chuột/phím.
 """
 import sys
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -52,6 +53,43 @@ for t in core.ACTION_TYPES:
     ed.destroy()
     root.update()
 check("cả 10 loại đều không có TCombobox", not bad, bad)
+
+print("\n=== 1b. Cửa sổ vừa khít nội dung từng loại (không thừa, không cắt chữ) ===")
+# BẮT BUỘC deiconify: cửa sổ con của root đang withdraw thì chưa được map,
+# winfo_height() luôn trả 1 và bài test sẽ báo sai hết.
+root.deiconify()
+root.geometry("980x780+40+40")
+root.update()
+ed = m.ActionEditor(root, app, None)
+for _ in range(8):
+    root.update()
+    time.sleep(0.02)
+
+sizes, lech, tran = {}, [], []
+for t in core.ACTION_TYPES:
+    ed.type_var.set(t)
+    ed._render()
+    for _ in range(8):
+        root.update()
+        time.sleep(0.02)
+    w, h, need = ed.winfo_width(), ed.winfo_height(), ed.winfo_reqheight()
+    sizes[t] = h
+    if abs(h - need) > 2:
+        lech.append((t, h, need))
+    if w != ed.WIDTH:
+        lech.append((t, "rộng", w))
+    if ed.winfo_rooty() + h > root.winfo_screenheight():
+        tran.append((t, ed.winfo_rooty(), h))
+check("mọi loại: cửa sổ cao ĐÚNG bằng nội dung cần", not lech, lech)
+check("mọi loại: bề rộng giữ nguyên 520 (không giật ngang)", not lech, lech)
+check("không loại nào tràn khỏi đáy màn hình", not tran, tran)
+check("loại ít nội dung PHẢI nhỏ hơn hẳn loại nhiều nội dung",
+      sizes["delay"] < sizes["check_mod"] < sizes["abyss"], sizes)
+check("loại nhỏ nhất không còn bị kéo cao vô lý (< 400px)",
+      sizes["delay"] < 400, sizes["delay"])
+ed.destroy()
+root.withdraw()
+root.update()
 
 print("\n=== 2. Mở/đóng hộp thoại không để sót grab ===")
 before = root.grab_current()
