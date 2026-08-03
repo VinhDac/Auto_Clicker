@@ -27,6 +27,7 @@ Mã thoát 0 = tất cả đạt. Từng bài cũng chạy riêng được:
 | `test_hop_thoai_hanh_dong.py` | Hộp thoại hành động không được chứa widget chiếm grab toàn cục |
 | `test_them_hanh_dong.py` | Thêm/sửa/xoá/copy hành động qua nhiều Loop, setup dài 40 hành động, lưu & mở lại |
 | `test_chon_buoc_chuot.py` | Chọn bước và kéo-thả bằng sự kiện chuột |
+| `test_phim_tat.py` | Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả, dán rác không vỡ |
 | `test_hoi_quy.py` | Các tính năng cũ không bị vỡ |
 | `test_modclick_chuot_that.py` | Chạy thật bằng chuột thật — **chỉ chạy với `--full`** |
 

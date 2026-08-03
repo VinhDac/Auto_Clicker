@@ -1418,7 +1418,8 @@ class AutoClickerApp:
         pane.pack(fill="both", expand=True, padx=10, pady=6)
 
         # --- Cột trái: danh sách BƯỚC của Process ---
-        lwrap = ttk.LabelFrame(pane, text="Các bước của Process (chạy lần lượt từ trên xuống)",
+        lwrap = ttk.LabelFrame(pane, text="Các bước của Process (F2 đổi tên • Ctrl+C/Ctrl+V • "
+                                          "Del xoá • kéo-thả)",
                                padding=8)
         pane.add(lwrap, weight=1)
         sfr = ttk.Frame(lwrap)
@@ -1431,6 +1432,10 @@ class AutoClickerApp:
         ssb.pack(side="right", fill="y")
         self.step_box.bind("<<ListboxSelect>>", self._on_step_select)
         self.step_box.bind("<F2>", self.rename_step)
+        for seq, fn in (("<Control-c>", self.copy_steps), ("<Control-C>", self.copy_steps),
+                        ("<Control-v>", self.paste_steps), ("<Control-V>", self.paste_steps),
+                        ("<Delete>", self.delete_step_key)):
+            self.step_box.bind(seq, fn)
         self._enable_drag_reorder(self.step_box, lambda: self.steps, self._steps_reordered,
                                   on_moved=self._step_moved)
 
@@ -1534,7 +1539,8 @@ class AutoClickerApp:
         self.loop_name_var.trace_add("write", lambda *_: self._sync_loop_fields())
         self.loops_var.trace_add("write", lambda *_: self._sync_loop_fields())
 
-        ttk.Label(f, text="Hành động (double-click sửa • F2 đổi tên • Ctrl+C/Ctrl+V • kéo-thả):").pack(
+        ttk.Label(f, text="Hành động (double-click sửa • F2 đổi tên • Ctrl+C/Ctrl+V • "
+                          "Del xoá • kéo-thả):").pack(
             anchor="w", pady=(8, 2))
         body = ttk.Frame(f)
         body.pack(fill="both", expand=True)
@@ -1551,6 +1557,7 @@ class AutoClickerApp:
         self.listbox.bind("<Control-C>", self.copy_actions)
         self.listbox.bind("<Control-v>", self.paste_actions)
         self.listbox.bind("<Control-V>", self.paste_actions)
+        self.listbox.bind("<Delete>", self.delete_action_key)
         self.listbox.bind("<F2>", self.rename_action)
         self._enable_drag_reorder(self.listbox, lambda: self.actions, self.refresh)
 
@@ -1722,6 +1729,71 @@ class AutoClickerApp:
             self.cur = 0
         self.refresh_steps()
         self.select_step(min(self.cur, len(self.steps) - 1))
+
+    def delete_step_key(self, event=None):
+        """Phím Delete trên danh sách bước (vẫn hỏi xác nhận như nút 🗑)."""
+        self.delete_step()
+        return "break"
+
+    # ---- copy / paste BƯỚC (Ctrl+C / Ctrl+V trên danh sách bước) ----
+    CLIP_TAG_STEPS = "auto_clicker_steps"
+
+    def copy_steps(self, event=None):
+        st = self.cur_step
+        if st is None:
+            return "break"
+        payload = json.dumps({self.CLIP_TAG_STEPS: [st]}, ensure_ascii=False)
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(payload)
+            self.root.update()
+        except Exception:
+            pass
+        self.status.set(f"Đã copy bước \"{step_title(st)}\".")
+        return "break"
+
+    def _sanitize_step(self, st):
+        """Dựng lại 1 bước từ dữ liệu clipboard. Trả None nếu không hợp lệ.
+
+        Không tin dữ liệu clipboard: người dùng có thể đang giữ chữ item PoE hay
+        JSON của chương trình khác."""
+        if not isinstance(st, dict):
+            return None
+        if st.get("kind") == "loop":
+            acts = [a for a in (st.get("actions") or [])
+                    if isinstance(a, dict) and a.get("type") in ACTION_TYPES]
+            try:
+                max_loops = max(1, int(st.get("max_loops") or DEFAULT_MAX_LOOPS))
+                start = max(0, int(st.get("loop_start_index") or 0))
+            except (TypeError, ValueError):
+                max_loops, start = DEFAULT_MAX_LOOPS, 0
+            return {"kind": "loop",
+                    "name": str(st.get("name") or "Loop"),
+                    "actions": copy.deepcopy(acts),
+                    "loop_start_index": min(start, len(acts)),
+                    "max_loops": max_loops,
+                    "hold_keys": st.get("hold_keys") or ""}
+        if st.get("type") in ACTION_TYPES:
+            return make_action_step(copy.deepcopy(st))
+        return None
+
+    def paste_steps(self, event=None):
+        try:
+            data = json.loads(self.root.clipboard_get())
+            items = data.get(self.CLIP_TAG_STEPS) if isinstance(data, dict) else None
+        except Exception:
+            items = None
+        if not items:
+            return "break"
+        new_steps = [s for s in (self._sanitize_step(x) for x in items) if s]
+        if not new_steps:
+            return "break"
+        pos = self.cur + 1 if self.steps else 0
+        self.steps[pos:pos] = new_steps
+        self.refresh_steps()
+        self.select_step(pos + len(new_steps) - 1)   # nhảy tới bước vừa dán
+        self.status.set(f"Đã dán {len(new_steps)} bước.")
+        return "break"
 
     def move_step(self, d):
         j = self.cur + d
@@ -1974,6 +2046,11 @@ class AutoClickerApp:
             self.actions[i] = dlg.result
             self.refresh()
             self.listbox.selection_set(i)
+
+    def delete_action_key(self, event=None):
+        """Phím Delete trên danh sách hành động."""
+        self.delete_action()
+        return "break"
 
     def delete_action(self):
         idxs = self._sel_indices()

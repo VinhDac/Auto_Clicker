@@ -23,6 +23,7 @@ AN_TOAN = [
     ("test_hop_thoai_hanh_dong.py", "Hộp thoại hành động: không widget nào chiếm grab"),
     ("test_them_hanh_dong.py", "Thêm/sửa/xoá/copy hành động qua nhiều Loop"),
     ("test_chon_buoc_chuot.py", "Chọn bước & kéo-thả bằng chuột (sự kiện giả)"),
+    ("test_phim_tat.py", "Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
 ]
 
