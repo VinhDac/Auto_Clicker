@@ -855,12 +855,25 @@ class InvGridSelector:
             mau = OK if co_hang is None else (OK if co_hang else THEME["err"])
             c.create_rectangle(cx0 + 2, cy0 + 2, cx0 + cw - 2, cy0 + ch - 2,
                                outline=mau, width=3)
-            c.create_text(cx0 + cw / 2, cy0 + ch / 2 - 6, fill=mau,
-                          font=("Segoe UI", 16, "bold"), text=str(n))
+            # Số thứ tự phải có NỀN ĐEN ĐẶC lót dưới: overlay chỉ 35% mờ, chữ trần
+            # nằm trên icon item lổn nhổn nhiều màu thì gần như không đọc ra.
+            # Đặt ở góc dưới-phải để không che mặt item (và không đè số lượng stack
+            # mà game vẽ ở góc trên-trái).
+            rad = max(11, min(cw, ch) * 0.27)
+            bx, by = cx0 + cw - rad - 4, cy0 + ch - rad - 4
+            c.create_oval(bx - rad, by - rad, bx + rad, by + rad,
+                          fill="#000000", outline=mau, width=2)
+            c.create_text(bx, by, fill="#ffffff", text=str(n),
+                          font=("Segoe UI", int(rad * 1.1), "bold"))
             if co_hang is not None:
-                c.create_text(cx0 + cw / 2, cy0 + ch / 2 + 12, fill=mau,
-                              font=("Segoe UI", 9, "bold"),
-                              text="CÒN" if co_hang else "HẾT")
+                t = c.create_text(cx0 + cw / 2, cy0 + 12, fill=mau,
+                                  font=("Segoe UI", 10, "bold"),
+                                  text="CÒN" if co_hang else "HẾT")
+                b = c.bbox(t)
+                if b:
+                    bg = c.create_rectangle(b[0] - 4, b[1] - 2, b[2] + 4, b[3] + 2,
+                                            fill="#000000", outline="")
+                    c.tag_lower(bg, t)
 
         for cx, cy in self._corners():
             c.create_rectangle(cx - 5, cy - 5, cx + 5, cy + 5, fill=AC, outline="")
