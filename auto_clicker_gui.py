@@ -793,7 +793,9 @@ class ActionEditor(tk.Toplevel):
         self.search_var = tk.StringVar()
         self.tier_var = tk.StringVar()
         self.hybrid_var = tk.StringVar(value=HYBRID_LABELS[HYBRID_ANY])
-        self.hold_var = tk.StringVar(value="shift")
+        self.k_shift = tk.BooleanVar(value=True)
+        self.k_ctrl = tk.BooleanVar(value=False)
+        self.k_alt = tk.BooleanVar(value=False)
         self.button_var = tk.StringVar(value="Trái")
         self.minval_var = tk.StringVar()
         self.rerolls_var = tk.StringVar(value=str(ABYSS_DEFAULT_REROLLS))
@@ -809,7 +811,10 @@ class ActionEditor(tk.Toplevel):
             self.pick_var.set(ABYSS_PICK_LABELS.get(action.get("pick", ABYSS_PICK_RANDOM),
                                                     ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM]))
         if action and action.get("type") == "mod_click":
-            self.hold_var.set("+".join(parse_hold_keys(action.get("keys"))) or "shift")
+            keys = parse_hold_keys(action.get("keys"))
+            self.k_shift.set("shift" in keys)
+            self.k_ctrl.set("ctrl" in keys)
+            self.k_alt.set("alt" in keys)
             self.button_var.set("Trái" if action.get("button", "left") == "left" else "Phải")
         if action:
             if "point" in action:
@@ -854,15 +859,23 @@ class ActionEditor(tk.Toplevel):
             ttk.Button(self.body, text="🎯 Chọn điểm (crosshair)", command=self._pick).grid(
                 row=1, column=0, columnspan=4, pady=(8, 0), sticky="ew")
         elif t == "mod_click":
+            # 3 ô tick, KHÔNG dùng ttk.Combobox. Dropdown của Combobox chiếm grab
+            # TOÀN CỤC (ttk::combobox::MapPopdown -> ttk::globalGrab -> grab -global)
+            # ngay bên trong hộp thoại vốn đã grab_set() -> có lúc không trả grab
+            # lại được và cả máy ngừng nhận chuột/phím. Ô tick không grab gì cả,
+            # lại chặn luôn được lỗi gõ sai tên phím.
             ttk.Label(self.body, text="Giữ phím:").grid(row=0, column=0, sticky="w")
-            cb = ttk.Combobox(self.body, textvariable=self.hold_var, width=14,
-                              values=COMMON_HOLD_KEYS)
-            cb.grid(row=0, column=1, sticky="w", padx=4)
-            ttk.Label(self.body, text="Nút chuột:").grid(row=0, column=2, sticky="w", padx=(10, 0))
+            kf = ttk.Frame(self.body)
+            kf.grid(row=0, column=1, columnspan=2, sticky="w", padx=4)
+            for label, var in (("Shift", self.k_shift), ("Ctrl", self.k_ctrl),
+                               ("Alt", self.k_alt)):
+                ttk.Checkbutton(kf, text=label, variable=var).pack(side="left", padx=(0, 12))
+            ttk.Label(self.body, text="Nút chuột:").grid(row=0, column=3, sticky="w", padx=(10, 0))
             ttk.OptionMenu(self.body, self.button_var, self.button_var.get(),
-                           "Trái", "Phải").grid(row=0, column=3, sticky="w")
-            ttk.Label(self.body, text="(nhiều phím thì nối bằng dấu +, vd: ctrl+shift)",
-                      style="Muted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 6))
+                           "Trái", "Phải").grid(row=0, column=4, sticky="w")
+            ttk.Label(self.body, text="(tick được nhiều phím cùng lúc, vd Ctrl + Shift)",
+                      style="Muted.TLabel").grid(row=1, column=0, columnspan=5, sticky="w",
+                                                 pady=(2, 6))
             ttk.Label(self.body, text="X:").grid(row=2, column=0, sticky="w")
             ttk.Entry(self.body, textvariable=self.x_var, width=8).grid(row=2, column=1, sticky="w")
             ttk.Label(self.body, text="Y:").grid(row=2, column=2, sticky="w", padx=(10, 0))
@@ -1146,9 +1159,10 @@ class ActionEditor(tk.Toplevel):
                      "rerolls": rr, "wait_ms": wm,
                      "pick": ABYSS_PICK_FROM_LABEL.get(self.pick_var.get(), ABYSS_PICK_RANDOM)}
             elif t == "mod_click":
-                keys = parse_hold_keys(self.hold_var.get())
+                keys = [k for k, v in (("ctrl", self.k_ctrl), ("shift", self.k_shift),
+                                       ("alt", self.k_alt)) if v.get()]
                 if not keys:
-                    raise ValueError("chưa chọn phím cần giữ")
+                    raise ValueError("chưa tick phím nào cần giữ")
                 a = {"type": t,
                      "point": [int(self.x_var.get()), int(self.y_var.get())],
                      "keys": "+".join(keys),
@@ -1325,6 +1339,7 @@ class AutoClickerApp:
         self.all_mods = load_mods(self.settings["game"])
         self.stop_flag = threading.Event()
         self.hotkey_handle = None
+        self.hotkey_raw = None
         self._rename_entry = None
         self._hotkey_label = "F6"
         self._log_q = queue.Queue()      # worker thread -> UI, gom lại rồi vẽ 1 lượt
@@ -1338,16 +1353,26 @@ class AutoClickerApp:
         self._pump_log()
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def on_close(self):
-        """Đóng cửa sổ: dừng vòng chạy, huỷ hẹn giờ bơm log, gỡ hotkey toàn cục."""
-        self.stop_flag.set()
-        self._cancel_pump()
+    def _remove_hotkeys(self):
+        """Gỡ CẢ HAI kiểu đăng ký phím dừng (tổ hợp + bắt thô). Gọi mấy lần cũng được."""
         if self.hotkey_handle is not None:
             try:
                 keyboard.remove_hotkey(self.hotkey_handle)
             except Exception:
                 pass
             self.hotkey_handle = None
+        if self.hotkey_raw is not None:
+            try:
+                keyboard.unhook_key(self.hotkey_raw)
+            except Exception:
+                pass
+            self.hotkey_raw = None
+
+    def on_close(self):
+        """Đóng cửa sổ: dừng vòng chạy, huỷ hẹn giờ bơm log, gỡ hotkey toàn cục."""
+        self.stop_flag.set()
+        self._cancel_pump()
+        self._remove_hotkeys()
         try:
             self.root.destroy()
         except Exception:
@@ -1508,6 +1533,11 @@ class AutoClickerApp:
         ttk.Label(top, text="Số vòng lặp:").pack(side="left")
         self.loops_var = tk.StringVar(value=str(DEFAULT_MAX_LOOPS))
         ttk.Entry(top, textvariable=self.loops_var, width=8).pack(side="left", padx=4)
+        # Giữ Shift là THUỘC TÍNH CỦA LOOP, không phải một hành động: phạm vi của
+        # nó đúng bằng cái khung này, không phụ thuộc thứ tự hay dấu "🔁 Loop từ đây".
+        self.hold_shift_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="⇧ Giữ Shift suốt Loop", variable=self.hold_shift_var,
+                        command=self._sync_loop_fields).pack(side="left", padx=(14, 0))
         self.loop_name_var.trace_add("write", lambda *_: self._sync_loop_fields())
         self.loops_var.trace_add("write", lambda *_: self._sync_loop_fields())
 
@@ -1597,6 +1627,7 @@ class AutoClickerApp:
                 self.loop_pane.pack(fill="both", expand=True)
                 self.loop_name_var.set(st.get("name") or "")
                 self.loops_var.set(str(st.get("max_loops", DEFAULT_MAX_LOOPS)))
+                self.hold_shift_var.set(bool(parse_hold_keys(st.get("hold_keys"))))
                 self.refresh()
             else:
                 self.loop_pane.pack_forget()
@@ -1614,11 +1645,13 @@ class AutoClickerApp:
         if st is None or not is_loop_step(st):
             return
         st["name"] = self.loop_name_var.get().strip() or "Loop"
+        st["hold_keys"] = "shift" if self.hold_shift_var.get() else ""
         try:
             st["max_loops"] = max(1, int(self.loops_var.get() or 1))
         except ValueError:
             pass
         self.refresh_steps()
+        self.refresh()          # tiền tố ⇧ trên từng dòng hành động đổi theo
 
     def add_loop_step(self):
         self.steps.insert(self.cur + 1 if self.steps else 0,
@@ -1734,12 +1767,16 @@ class AutoClickerApp:
         n = len(acts)
         start = max(0, min(self.loop_start_index, n))
         self.loop_start_index = start
+        # Tick "Giữ Shift" bật -> gắn ⇧ vào TỪNG dòng, để nhìn 1 dòng vẫn biết cú
+        # click đó là shift-click, khỏi phải ngó ngược lên ô tick.
+        hold_mark = "⇧" if parse_hold_keys(st.get("hold_keys")) else ""
         for idx, a in enumerate(acts):
             i = idx + 1
             looping = idx >= start
             prefix = "🔁 " if looping else "    "
             suffix = "" if looping else "   (1 lần)"
-            self.listbox.insert(tk.END, f"{prefix}{i}.  {action_display(a)}{suffix}")
+            self.listbox.insert(tk.END,
+                                f"{prefix}{hold_mark}{i}.  {action_display(a)}{suffix}")
             if not looping:
                 self.listbox.itemconfig(idx, fg=THEME["dim"])
         self.refresh_steps()
@@ -2309,6 +2346,14 @@ class AutoClickerApp:
             self.hotkey_handle = keyboard.add_hotkey(cfg["stop_hotkey"], self.stop_flag.set)
         except Exception:
             self.hotkey_handle = None
+        # Lớp dự phòng: add_hotkey khớp ĐÚNG tổ hợp, nên khi app đang GIỮ Shift
+        # thì F6 bị hiểu thành Shift+F6 và không khớp -> không dừng được, đúng lúc
+        # cần dừng nhất. on_press_key bắt phím thô, kệ phím bổ trợ.
+        try:
+            self.hotkey_raw = keyboard.on_press_key(cfg["stop_hotkey"],
+                                                    lambda e: self.stop_flag.set())
+        except Exception:
+            self.hotkey_raw = None
         threading.Thread(target=self._run_worker, args=(cfg,), daemon=True).start()
 
     def stop_run(self):
@@ -2320,7 +2365,26 @@ class AutoClickerApp:
         runner = ProcessRunner(cfg, self.stop_flag,
                                on_status=self._set_status,
                                on_log=self._log_check)
-        status, total_loops = runner.run()
+        try:
+            status, total_loops = runner.run()
+        except BaseException as e:
+            # BẮT BUỘC phải bắt: đây là thread phụ, lỗi lọt ra là thread chết ÂM
+            # THẦM -> _finish() không chạy -> nút Chạy kẹt mờ, nút Dừng kẹt sáng,
+            # hotkey toàn cục không được gỡ. Nhìn y như "app bị đơ".
+            # Bản .exe chạy --windowed còn không có console để thấy traceback.
+            import traceback
+            detail = traceback.format_exc(limit=6)
+            self._log(f"⛔ LỖI KHÔNG LƯỜNG TRƯỚC: {type(e).__name__}: {e}", "err")
+            for line in detail.strip().splitlines()[-6:]:
+                self._log(f"    {line}", "dim")
+            status, total_loops = (f"⛔ Dừng vì lỗi: {type(e).__name__}: {e}", 0)
+        finally:
+            # Dù hỏng kiểu gì cũng phải thả hết phím đang giữ, không để kẹt Shift
+            # trong cả hệ thống.
+            try:
+                runner.release_held_keys()
+            except Exception:
+                pass
         self._finish(status, total_loops)
 
     def _set_status(self, msg):
@@ -2387,23 +2451,13 @@ class AutoClickerApp:
             self.status.set(f"{status} — tổng {loops} vòng.")
             self.run_btn.config(state="normal")
             self.stop_btn.config(state="disabled")
-            if self.hotkey_handle is not None:
-                try:
-                    keyboard.remove_hotkey(self.hotkey_handle)
-                except Exception:
-                    pass
-                self.hotkey_handle = None
+            self._remove_hotkeys()
             notify(loops, status)
         try:
             self.root.after(0, done)
         except tk.TclError:
             # cửa sổ đã đóng khi đang chạy — vẫn gỡ hotkey toàn cục cho sạch
-            if self.hotkey_handle is not None:
-                try:
-                    keyboard.remove_hotkey(self.hotkey_handle)
-                except Exception:
-                    pass
-                self.hotkey_handle = None
+            self._remove_hotkeys()
 
 
 def main():

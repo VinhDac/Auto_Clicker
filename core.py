@@ -23,6 +23,7 @@ import random
 import threading
 import ctypes
 import functools
+import contextlib
 import urllib.request
 
 
@@ -189,6 +190,7 @@ def make_loop_template(step, game):
             "actions": step.get("actions") or [],
             "loop_start_index": int(step.get("loop_start_index") or 0),
             "max_loops": int(step.get("max_loops") or DEFAULT_MAX_LOOPS),
+            "hold_keys": step.get("hold_keys") or "",
         },
     }
 
@@ -206,6 +208,7 @@ def normalize_loop_template(data):
             "actions": lp.get("actions") or [],
             "loop_start_index": int(lp.get("loop_start_index") or 0),
             "max_loops": int(lp.get("max_loops") or DEFAULT_MAX_LOOPS),
+            "hold_keys": lp.get("hold_keys") or "",
         }
     return None
 
@@ -412,7 +415,8 @@ DEFAULT_MAX_LOOPS = 1000
 
 def make_loop_step(name="Loop mới"):
     return {"kind": "loop", "name": name, "actions": [],
-            "loop_start_index": 0, "max_loops": DEFAULT_MAX_LOOPS}
+            "loop_start_index": 0, "max_loops": DEFAULT_MAX_LOOPS,
+            "hold_keys": ""}
 
 
 def make_action_step(action):
@@ -436,10 +440,12 @@ def step_display(step):
     """Chuỗi hiện ở cột danh sách bước."""
     if is_loop_step(step):
         n = len(step.get("actions") or [])
-        has_check = any(a.get("type") == "check_mod" for a in (step.get("actions") or []))
+        has_check = any(a.get("type") in GOAL_TYPES for a in (step.get("actions") or []))
         goal = "có mục tiêu" if has_check else "chỉ theo số vòng"
+        hold = parse_hold_keys(step.get("hold_keys"))
+        hold_txt = f"  ·  ⇧ giữ {'+'.join(hold)}" if hold else ""
         return (f"🔁 {step.get('name') or 'Loop'}   ·  {n} hành động  ·  "
-                f"tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng  ·  {goal}")
+                f"tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng  ·  {goal}{hold_txt}")
     return f"⚡ {action_display(step)}   (chạy 1 lần)"
 
 
@@ -467,6 +473,7 @@ def normalize_process(data):
                     "actions": st.get("actions") or [],
                     "loop_start_index": int(st.get("loop_start_index") or 0),
                     "max_loops": int(st.get("max_loops") or DEFAULT_MAX_LOOPS),
+                    "hold_keys": st.get("hold_keys") or "",
                 })
             elif st.get("type"):
                 steps.append(make_action_step(st))
@@ -495,6 +502,7 @@ def normalize_process(data):
                 "actions": actions,
                 "loop_start_index": int(lp.get("loop_start_index") or 0),
                 "max_loops": int(lp.get("max_loops") or DEFAULT_MAX_LOOPS),
+                "hold_keys": lp.get("hold_keys") or "",
             })
         if len(steps) > 1:
             note = f"Đã nạp {len(steps)} Action_Loop từ file thành {len(steps)} bước."
@@ -516,6 +524,7 @@ def normalize_process(data):
         "actions": actions,
         "loop_start_index": norm["loop_start_index"],
         "max_loops": norm["max_loops"],
+        "hold_keys": "",          # định dạng cũ chưa có khái niệm này
     }]
     return {"name": "Process 1", "start_delay": norm["start_delay"],
             "steps": steps, "note": norm["note"]}
@@ -612,6 +621,19 @@ def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=No
         elif t == "abyss":
             for p in abyss_problems(a, screen):
                 problems.append({"severity": p["severity"], "message": p["message"], "index": i})
+        elif t == "mod_click":
+            keys = parse_hold_keys(a.get("keys"))
+            if not keys:
+                err("\"Giữ phím + click\" chưa chọn phím nào.", i)
+            else:
+                bad = [k for k in keys if not is_valid_key(k)]
+                if bad:
+                    err(f"\"Giữ phím + click\": phím không hợp lệ: {', '.join(bad)}. "
+                        f"Dùng tên như shift, ctrl, alt.", i)
+            if not a.get("point"):
+                err("\"Giữ phím + click\" chưa chọn điểm click.", i)
+        elif t == "key_press" and not is_valid_key(str(a.get("key", "")).strip().lower()):
+            err(f"\"Nhấn phím\": phím không hợp lệ: {a.get('key', '')}", i)
         point = a.get("point")
         if point and screen:
             sx, sy, sw, sh = screen
@@ -691,14 +713,63 @@ ACTION_LABELS = {
 }
 # Hành động có thể kết thúc sớm cả Loop khi đạt mục tiêu.
 GOAL_TYPES = ("check_mod", "abyss")
+
+
+class HeldKeys:
+    """Sổ theo dõi phím đang được GIỮ suốt một bước Loop (ô tick "Giữ Shift").
+
+    Vì sao phải quản tập trung chứ không để hành động tự lo: phím giữ là trạng
+    thái của CẢ HỆ THỐNG. Loop dừng giữa chừng (bấm Dừng, F6, failsafe, hay lỗi)
+    mà chưa thả thì Shift kẹt trong toàn Windows — gõ gì cũng ra chữ hoa, click
+    đâu cũng thành shift-click.
+
+    KHÔNG có cơ chế "nhả tạm": đã thử và đó là sai lầm. Nhả Shift ra giữa chừng
+    (dù chỉ để bắn Ctrl+C) làm game rớt khỏi chế độ dùng-liên-tục ở MỖI vòng lặp
+    — đúng cái bệnh đang đi chữa. Đã kiểm chứng trong game: Ctrl+C vẫn đọc được
+    chữ item bình thường khi Shift đang giữ.
+    """
+
+    def __init__(self):
+        self.keys = []
+
+    def hold(self, keys):
+        for k in keys:
+            try:
+                pyautogui.keyDown(k)
+            except Exception:
+                continue
+            if k not in self.keys:
+                self.keys.append(k)
+
+    def release_all(self):
+        """Thả hết, theo thứ tự ngược. Gọi được nhiều lần, không sao."""
+        for k in reversed(list(self.keys)):
+            try:
+                pyautogui.keyUp(k)
+            except Exception:
+                pass
+        self.keys = []
 POINT_TYPES = ("left_click", "right_click", "double_click", "move")
 # Phím giữ hay dùng trong PoE: Shift+click (tách stack), Ctrl+click (chuyển stash)
-COMMON_HOLD_KEYS = ["shift", "ctrl", "alt", "ctrl+shift", "alt+shift"]
+MOD_KEYS = ["ctrl", "shift", "alt"]      # 3 phím bổ trợ, giao diện cho tick chọn
 
 
 def parse_hold_keys(s):
     """'ctrl+shift' -> ['ctrl', 'shift'] (bỏ khoảng trắng, bỏ mục rỗng)."""
     return [k.strip().lower() for k in (s or "").split("+") if k.strip()]
+
+
+def is_valid_key(k):
+    """pyautogui có hiểu tên phím này không?
+
+    QUAN TRỌNG: pyautogui.keyDown() với tên phím sai KHÔNG ném lỗi — nó lặng lẽ
+    không làm gì (đã đo). Nghĩa là gõ nhầm "shft" hay "windows" sẽ ra cú click
+    THIẾU phím giữ mà chẳng có dấu hiệu gì. Nên phải tự kiểm và báo trước khi chạy.
+    """
+    try:
+        return bool(pyautogui.isValidKey(k))
+    except Exception:
+        return True          # không kiểm được thì đừng chặn oan người dùng
 
 
 def action_display(a):
@@ -749,10 +820,22 @@ def human_sleep(min_ms, max_ms, stop_flag):
         time.sleep(min(0.02, max(0.0, end - time.time())))
 
 
+def _point_of(a):
+    """Lấy toạ độ của hành động, báo lỗi RÕ RÀNG nếu thiếu.
+
+    Trước đây `x, y = a["point"]` gặp point thiếu/None sẽ ném KeyError/TypeError
+    trần trụi từ trong ruột bộ máy chạy — người dùng chỉ thấy app đứng im."""
+    pt = a.get("point")
+    if not pt or len(pt) != 2:
+        raise ValueError(f"hành động \"{ACTION_LABELS.get(a.get('type'), a.get('type'))}\" "
+                         f"chưa có toạ độ điểm click")
+    return int(pt[0]), int(pt[1])
+
+
 def do_action(a, stop_flag, pre_click_ms=0):
     t = a["type"]
     if t in ("left_click", "right_click", "double_click"):
-        x, y = a["point"]
+        x, y = _point_of(a)
         pyautogui.moveTo(x, y)
         if pre_click_ms > 0:
             human_sleep(pre_click_ms, pre_click_ms, stop_flag)
@@ -765,8 +848,14 @@ def do_action(a, stop_flag, pre_click_ms=0):
         else:
             pyautogui.doubleClick()
     elif t == "mod_click":
-        x, y = a["point"]
+        x, y = _point_of(a)
         keys = parse_hold_keys(a.get("keys"))
+        bad = [k for k in keys if not is_valid_key(k)]
+        if bad:
+            # Không im lặng bỏ qua: click thiếu phím giữ trong game là hỏng cả
+            # vòng chạy mà không ai biết vì sao.
+            raise ValueError(f"phím giữ không hợp lệ: {', '.join(bad)} "
+                             f"(dùng shift / ctrl / alt)")
         button = a.get("button", "left")
         pyautogui.moveTo(x, y)
         if pre_click_ms > 0:
@@ -786,7 +875,8 @@ def do_action(a, stop_flag, pre_click_ms=0):
                 except Exception:
                     pass
     elif t == "move":
-        pyautogui.moveTo(a["point"][0], a["point"][1], duration=0.1)
+        x, y = _point_of(a)
+        pyautogui.moveTo(x, y, duration=0.1)
     elif t == "scroll":
         pyautogui.scroll(a.get("amount", -300))
     elif t == "key_press":
@@ -1301,6 +1391,11 @@ class ProcessRunner:
         self._on_status = on_status or (lambda msg: None)
         self._on_log = on_log or (lambda msg, tag=None: None)
         self.hotkey_label = str(cfg.get("stop_hotkey", "f6")).upper()
+        self.held = HeldKeys()
+
+    def release_held_keys(self):
+        """Thả mọi phím đang giữ. Bên gọi nên gọi lại lần nữa cho chắc."""
+        self.held.release_all()
 
     # -- kênh báo ra ngoài --
     def _status(self, msg):
@@ -1322,8 +1417,8 @@ class ProcessRunner:
                     status, payload = abyss_action(a, self.stop_flag, pre_click_ms,
                                                    log=self._log)
                 else:
-                    status, payload = check_mod_action(a, self.stop_flag, hover_ms, copy_keys,
-                                                       log=self._log)
+                    status, payload = check_mod_action(a, self.stop_flag, hover_ms,
+                                                       copy_keys, log=self._log)
                 if status == CHECK_MATCH:
                     return payload, None
                 if status == CHECK_READ_FAIL:
@@ -1334,6 +1429,14 @@ class ProcessRunner:
                 except pyautogui.FailSafeException:
                     self.stop_flag.set()
                     return None, None
+                except Exception as e:
+                    # MỘT hành động hỏng KHÔNG được phép giết cả vòng chạy. Trước
+                    # đây chỉ bắt FailSafe -> lỗi khác lọt lên, thread chết âm thầm,
+                    # giao diện kẹt ở trạng thái "đang chạy" và phím giữ không được
+                    # thả. Giờ báo rõ rồi dừng gọn.
+                    return None, (f"hành động #{actions.index(a) + 1} "
+                                  f"({ACTION_LABELS.get(a.get('type'), a.get('type'))}) "
+                                  f"lỗi: {type(e).__name__}: {e}")
         return None, None
 
     # -- chạy 1 bước Action_Loop --
@@ -1344,6 +1447,22 @@ class ProcessRunner:
             "exhausted" có mục tiêu nhưng hết vòng chưa đạt -> DỪNG cả Process
             "read_fail" không đọc được chữ item nhiều lần liên tiếp
             "aborted"   người dùng dừng"""
+        # Ô tick "Giữ Shift": bấm giữ ở ĐẦU bước, thả ở CUỐI bước — phạm vi đúng
+        # bằng cái khung Loop trên giao diện. Không dính dấu "🔁 Loop từ đây" và
+        # không ảnh hưởng bước sau. finally đảm bảo thả kể cả khi dừng/lỗi.
+        hold = [k for k in parse_hold_keys(step.get("hold_keys")) if is_valid_key(k)]
+        if hold and not self.stop_flag.is_set():
+            self.held.hold(hold)
+            self._log(f"   ⇧ giữ [{'+'.join(hold)}] suốt Loop này", "dim")
+        try:
+            return self._run_loop_inner(step, si, total_steps, pre_click_ms,
+                                        hover_ms, copy_keys)
+        finally:
+            if hold:
+                self.held.release_all()
+                self._log(f"   ⇧ đã thả [{'+'.join(hold)}]", "dim")
+
+    def _run_loop_inner(self, step, si, total_steps, pre_click_ms, hover_ms, copy_keys):
         actions = step.get("actions") or []
         n = len(actions)
         loop_start = max(0, min(int(step.get("loop_start_index") or 0), n))
@@ -1391,7 +1510,16 @@ class ProcessRunner:
 
     # -- chạy cả Process --
     def run(self):
-        """Chạy trọn Process. Trả về (status_text, total_loops)."""
+        """Chạy trọn Process. Trả về (status_text, total_loops).
+
+        Bọc finally để DÙ DỪNG KIỂU GÌ (xong, bấm Dừng, F6, failsafe, lỗi bất
+        ngờ) cũng thả hết phím đang giữ — không để Shift kẹt trong cả Windows."""
+        try:
+            return self._run_inner()
+        finally:
+            self.held.release_all()
+
+    def _run_inner(self):
         cfg = self.cfg
         for i in range(cfg.get("start_delay", 0), 0, -1):
             if self.stop_flag.is_set():
