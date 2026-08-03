@@ -672,6 +672,235 @@ class AbyssFrameSelector:
         self.callback([self.fx, self.fy, self.fw, self.fh] if save else None)
 
 
+# ---------------- Overlay căn lưới inventory + tick ô ----------------
+class InvGridSelector:
+    """Căn khung trùm lưới inventory (12×5), rồi BẤM THẲNG VÀO Ô để tick.
+
+    Khung khoá đúng tỉ lệ lưới thật nên chỉ cần kéo cho 4 mép trùng là 60 ô tự
+    rơi đúng chỗ — không phải căn từng ô, không phải khai số hàng/cột.
+
+        kéo giữa = di chuyển     kéo 4 góc = phóng to/thu nhỏ
+        BẤM vào ô = tick/bỏ tick (ô đã tick hiện số thứ tự dùng)
+        mũi tên = nhích 1px      Shift+mũi tên = 10px
+        D = đọc thử (ô nào CÒN, ô nào HẾT)     Enter = lưu     Esc = huỷ
+    """
+    HANDLE = 16
+    MIN_W = 200
+    DRAG_SLOP = 4          # di chuột dưới ngần này pixel thì coi là BẤM, không phải KÉO
+
+    def __init__(self, root, frame, cells, callback):
+        self.callback = callback
+        self.cells = [tuple(c) for c in (cells or [])]
+        self.scan = None            # {(r,c): còn_hàng} sau khi Đọc thử
+        self.drag = None
+        u = ctypes.windll.user32
+        self.vx, self.vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)
+        self.vw, self.vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)
+
+        if frame and len(frame) == 4 and frame[2] > 0 and frame[3] > 0:
+            self.fx, self.fy, self.fw, self.fh = (int(v) for v in frame)
+        else:
+            self.fw = int(self.vw * 0.32)
+            self.fh = int(self.fw / INV_ASPECT)
+            self.fx = self.vx + (self.vw - self.fw) // 2
+            self.fy = self.vy + (self.vh - self.fh) // 2
+
+        self.win = tk.Toplevel(root)
+        self.win.overrideredirect(True)
+        self.win.geometry(f"{self.vw}x{self.vh}+{self.vx}+{self.vy}")
+        self.win.attributes("-topmost", True)
+        try:
+            self.win.attributes("-alpha", 0.35)
+        except Exception:
+            pass
+        self.canvas = tk.Canvas(self.win, bg=THEME["bg"], highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+
+        self.canvas.bind("<Button-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
+        for key, dx, dy in (("Left", -1, 0), ("Right", 1, 0), ("Up", 0, -1), ("Down", 0, 1)):
+            self.win.bind(f"<{key}>", lambda e, a=dx, b=dy: self._nudge(a, b))
+            self.win.bind(f"<Shift-{key}>", lambda e, a=dx, b=dy: self._nudge(a * 10, b * 10))
+        self.win.bind("<plus>", lambda e: self._scale(1.02))
+        self.win.bind("<equal>", lambda e: self._scale(1.02))
+        self.win.bind("<minus>", lambda e: self._scale(1 / 1.02))
+        self.win.bind("<d>", lambda e: self._test_read())
+        self.win.bind("<D>", lambda e: self._test_read())
+        self.win.bind("<c>", lambda e: self._clear())
+        self.win.bind("<C>", lambda e: self._clear())
+        self.win.bind("<Return>", lambda e: self._finish(True))
+        self.win.bind("<Escape>", lambda e: self._finish(False))
+        self.win.focus_force()
+        try:
+            self.win.update_idletasks()
+            self.win.grab_set()
+        except Exception:
+            pass
+        self._draw()
+
+    # ---- hình học ----
+    def _rect(self):
+        return (self.fx - self.vx, self.fy - self.vy, self.fw, self.fh)
+
+    def _corners(self):
+        x, y, w, h = self._rect()
+        return [(x, y), (x + w, y), (x, y + h), (x + w, y + h)]
+
+    def _clamp(self):
+        self.fw = max(self.MIN_W, int(self.fw))
+        self.fh = int(self.fw / INV_ASPECT)
+
+    def _cell_at(self, cx, cy):
+        """Toạ độ canvas -> (hàng, cột), None nếu ngoài lưới."""
+        x, y, w, h = self._rect()
+        if not (x <= cx < x + w and y <= cy < y + h):
+            return None
+        c = int((cx - x) / (w / INV_COLS))
+        r = int((cy - y) / (h / INV_ROWS))
+        if 0 <= r < INV_ROWS and 0 <= c < INV_COLS:
+            return (r, c)
+        return None
+
+    def _nudge(self, dx, dy):
+        self.fx += dx
+        self.fy += dy
+        self._draw()
+
+    def _scale(self, k):
+        cx, cy = self.fx + self.fw / 2, self.fy + self.fh / 2
+        self.fw = int(self.fw * k)
+        self._clamp()
+        self.fx, self.fy = int(cx - self.fw / 2), int(cy - self.fh / 2)
+        self._draw()
+
+    def _clear(self):
+        self.cells = []
+        self.scan = None
+        self._draw()
+
+    # ---- chuột: BẤM = tick ô, KÉO = di chuyển khung ----
+    def _press(self, e):
+        for i, (cx, cy) in enumerate(self._corners()):
+            if abs(e.x - cx) <= self.HANDLE and abs(e.y - cy) <= self.HANDLE:
+                ax = self.fx + self.fw if i in (0, 2) else self.fx
+                ay = self.fy + self.fh if i in (0, 1) else self.fy
+                sx = -1 if i in (0, 2) else 1
+                sy = -1 if i in (0, 1) else 1
+                self.drag = ("corner", ax, ay, sx, sy)
+                return
+        x, y, w, h = self._rect()
+        if x <= e.x <= x + w and y <= e.y <= y + h:
+            # Chưa biết là bấm hay kéo — chờ xem chuột có đi đủ xa không.
+            self.drag = ("maybe", e.x - x, e.y - y, e.x, e.y)
+
+    def _motion(self, e):
+        if not self.drag:
+            return
+        mode = self.drag[0]
+        if mode == "maybe":
+            _, ox, oy, sx0, sy0 = self.drag
+            if abs(e.x - sx0) <= self.DRAG_SLOP and abs(e.y - sy0) <= self.DRAG_SLOP:
+                return                      # rung tay vài pixel: vẫn coi là bấm
+            self.drag = ("move", ox, oy)
+            mode = "move"
+        if mode == "move":
+            self.fx = self.vx + e.x - self.drag[1]
+            self.fy = self.vy + e.y - self.drag[2]
+        else:
+            _, ax, ay, sx, sy = self.drag
+            self.fw = abs(self.vx + e.x - ax)
+            self._clamp()
+            self.fx = ax if sx > 0 else ax - self.fw
+            self.fy = ay if sy > 0 else ay - self.fh
+        self._draw()
+
+    def _release(self, e):
+        if self.drag and self.drag[0] == "maybe":
+            rc = self._cell_at(e.x, e.y)
+            if rc is not None:
+                if rc in self.cells:
+                    self.cells.remove(rc)
+                else:
+                    self.cells.append(rc)      # thứ tự tick = thứ tự dùng
+                self.scan = None
+                self._draw()
+        self.drag = None
+
+    # ---- vẽ ----
+    def _draw(self):
+        self._clamp()
+        c = self.canvas
+        c.delete("all")
+        AC, OK, TX = THEME["accent"], THEME["ok"], THEME["text"]
+        x, y, w, h = self._rect()
+        cw, ch = w / INV_COLS, h / INV_ROWS
+
+        c.create_text(self.vw // 2, 26, fill=TX, font=("Segoe UI", 14),
+                      text="Kéo giữa = di chuyển  •  kéo 4 góc = phóng to/thu nhỏ  •  "
+                           "mũi tên = 1px, Shift = 10px")
+        c.create_text(self.vw // 2, 50, fill=AC, font=("Segoe UI", 13, "bold"),
+                      text="BẤM VÀO Ô để chọn ô lấy currency   •   D = đọc thử   •   "
+                           "C = xoá hết   •   Enter = lưu   •   Esc = huỷ")
+
+        for i in range(INV_COLS + 1):          # lưới
+            c.create_line(x + i * cw, y, x + i * cw, y + h, fill=AC, width=1)
+        for j in range(INV_ROWS + 1):
+            c.create_line(x, y + j * ch, x + w, y + j * ch, fill=AC, width=1)
+        c.create_rectangle(x, y, x + w, y + h, outline=AC, width=2)
+
+        for n, (r, col) in enumerate(self.cells, 1):
+            cx0, cy0 = x + col * cw, y + r * ch
+            co_hang = None if self.scan is None else self.scan.get((r, col))
+            mau = OK if co_hang is None else (OK if co_hang else THEME["err"])
+            c.create_rectangle(cx0 + 2, cy0 + 2, cx0 + cw - 2, cy0 + ch - 2,
+                               outline=mau, width=3)
+            c.create_text(cx0 + cw / 2, cy0 + ch / 2 - 6, fill=mau,
+                          font=("Segoe UI", 16, "bold"), text=str(n))
+            if co_hang is not None:
+                c.create_text(cx0 + cw / 2, cy0 + ch / 2 + 12, fill=mau,
+                              font=("Segoe UI", 9, "bold"),
+                              text="CÒN" if co_hang else "HẾT")
+
+        for cx, cy in self._corners():
+            c.create_rectangle(cx - 5, cy - 5, cx + 5, cy + 5, fill=AC, outline="")
+        c.create_text(x, y - 10, anchor="sw", fill=TX, font=("Consolas", 11),
+                      text=f"{self.fx}, {self.fy}   {self.fw}×{self.fh}   "
+                           f"ô {cw:.0f}×{ch:.0f}px   đã chọn {len(self.cells)} ô")
+
+    # ---- đọc thử ----
+    def _test_read(self):
+        if not self.cells:
+            return
+        self.win.withdraw()          # overlay đang che game -> phải ẩn mới chụp được
+        self.win.update()
+        time.sleep(0.15)
+        try:
+            ket = core.inv_scan((self.fx, self.fy, self.fw, self.fh), self.cells)
+        finally:
+            self.win.deiconify()
+            self.win.update()
+            self.win.focus_force()
+            try:
+                self.win.grab_set()
+            except Exception:
+                pass
+        self.scan = {(r, c): co for r, c, co, _ in ket}
+        self._draw()
+
+    def _finish(self, save):
+        try:
+            self.win.grab_release()
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+        self.callback(([self.fx, self.fy, self.fw, self.fh],
+                       [list(c) for c in self.cells]) if save else None)
+
+
 # ---------------- Hộp thoại chọn template đã lưu ----------------
 class TemplatePicker(tk.Toplevel):
     """Liệt kê template đã lưu theo tên. Kết quả đặt ở self.result:
@@ -803,6 +1032,10 @@ class ActionEditor(tk.Toplevel):
         self.wait_var = tk.StringVar(value=str(ABYSS_DEFAULT_WAIT_MS))
         self.abyss_frame = None
         self.excl_box = None
+        self.grid_on_var = tk.BooleanVar(value=False)
+        self.grid_frame = None
+        self.grid_cells = []
+        self.grid_lbl = None
         self.conditions = copy.deepcopy(action.get("conditions", [])) if action else []
         self.excludes = copy.deepcopy(action.get("excludes", [])) if action else []
         if action and action.get("type") == "abyss":
@@ -810,6 +1043,11 @@ class ActionEditor(tk.Toplevel):
             self.abyss_frame = list(fr) if fr else None
             self.rerolls_var.set(str(action.get("rerolls", ABYSS_DEFAULT_REROLLS)))
             self.wait_var.set(str(action.get("wait_ms", ABYSS_DEFAULT_WAIT_MS)))
+        if action and (action.get("grid") or {}).get("frame"):
+            g = action["grid"]
+            self.grid_on_var.set(True)
+            self.grid_frame = list(g["frame"])
+            self.grid_cells = [list(c) for c in (g.get("cells") or [])]
         if action and action.get("type") == "mod_click":
             keys = parse_hold_keys(action.get("keys"))
             self.k_shift.set("shift" in keys)
@@ -876,11 +1114,16 @@ class ActionEditor(tk.Toplevel):
             self._render_abyss()
         elif t in POINT_TYPES:
             ttk.Label(self.body, text="X:").grid(row=0, column=0, sticky="w")
-            ttk.Entry(self.body, textvariable=self.x_var, width=8).grid(row=0, column=1)
+            self.x_entry = ttk.Entry(self.body, textvariable=self.x_var, width=8)
+            self.x_entry.grid(row=0, column=1)
             ttk.Label(self.body, text="Y:").grid(row=0, column=2, sticky="w", padx=(10, 0))
-            ttk.Entry(self.body, textvariable=self.y_var, width=8).grid(row=0, column=3)
-            ttk.Button(self.body, text="🎯 Chọn điểm (crosshair)", command=self._pick).grid(
-                row=1, column=0, columnspan=4, pady=(8, 0), sticky="ew")
+            self.y_entry = ttk.Entry(self.body, textvariable=self.y_var, width=8)
+            self.y_entry.grid(row=0, column=3)
+            self.pick_btn = ttk.Button(self.body, text="🎯 Chọn điểm (crosshair)",
+                                       command=self._pick)
+            self.pick_btn.grid(row=1, column=0, columnspan=4, pady=(8, 0), sticky="ew")
+            if t == "right_click":
+                self._render_grid_advanced(row=2)
         elif t == "mod_click":
             # 3 ô tick, KHÔNG dùng ttk.Combobox. Dropdown của Combobox chiếm grab
             # TOÀN CỤC (ttk::combobox::MapPopdown -> ttk::globalGrab -> grab -global)
@@ -916,6 +1159,61 @@ class ActionEditor(tk.Toplevel):
         # Vẽ lại ruột xong thì co giãn cửa sổ theo. Bỏ dòng này là quay lại đúng
         # cái bệnh cũ: đổi Loại mà cửa sổ đứng im -> loại nhỏ trống, loại to bị cắt.
         self._fit_window()
+
+    def _render_grid_advanced(self, row):
+        """Tuỳ chọn NÂNG CAO của right_click: lấy từ nhiều ô, hết ô này sang ô sau.
+        Không tick thì mọi thứ y như cũ, file lưu ra cũng không có khoá thừa."""
+        ttk.Separator(self.body, orient="horizontal").grid(
+            row=row, column=0, columnspan=4, sticky="ew", pady=(12, 8))
+        ttk.Checkbutton(self.body, variable=self.grid_on_var, command=self._toggle_grid,
+                        text="Nâng cao: lấy từ nhiều ô, hết ô này tự sang ô khác"
+                        ).grid(row=row + 1, column=0, columnspan=4, sticky="w")
+        gf = ttk.Frame(self.body)
+        gf.grid(row=row + 2, column=0, columnspan=4, sticky="ew", pady=(6, 0))
+        self.grid_btn = ttk.Button(gf, text="🖼 Căn lưới", command=self._calibrate_grid)
+        self.grid_btn.pack(side="left")
+        self.grid_lbl = ttk.Label(gf, text="", style="Muted.TLabel")
+        self.grid_lbl.pack(side="left", padx=(8, 0))
+        ttk.Label(self.body, style="Muted.TLabel",
+                  text="Tick sẵn những ô CHỨA ĐÚNG loại currency cần dùng.\n"
+                       "App tự nhìn ô nào còn hàng — không đếm, không nhớ, nên bỏ thêm\n"
+                       "currency giữa chừng hay chạy lại đều đúng. Hết sạch thì DỪNG."
+                  ).grid(row=row + 3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        self._toggle_grid()
+
+    def _toggle_grid(self):
+        """Bật lưới thì X/Y vô nghĩa -> làm mờ, cho khỏi hiểu nhầm."""
+        on = self.grid_on_var.get()
+        for w in (self.x_entry, self.y_entry, self.pick_btn):
+            try:
+                w.config(state="disabled" if on else "normal")
+            except tk.TclError:
+                pass
+        try:
+            self.grid_btn.config(state="normal" if on else "disabled")
+        except tk.TclError:
+            pass
+        self._refresh_grid_label()
+
+    def _refresh_grid_label(self):
+        if not getattr(self, "grid_lbl", None):
+            return
+        if not self.grid_on_var.get():
+            self.grid_lbl.config(text="(đang tắt — dùng đúng 1 điểm X/Y ở trên)")
+        elif not self.grid_frame:
+            self.grid_lbl.config(text="chưa căn lưới")
+        else:
+            f = self.grid_frame
+            self.grid_lbl.config(text=f"({f[0]}, {f[1]}) {f[2]}×{f[3]}  ·  "
+                                      f"đã tick {len(self.grid_cells)} ô")
+
+    def _calibrate_grid(self):
+        def done(res):
+            if res:
+                self.grid_frame, self.grid_cells = res
+            self._refresh_grid_label()
+
+        self.app.pick_inv_grid(self.grid_frame, self.grid_cells, done, hide=self)
 
     def _render_check_mod(self):
         ttk.Label(self.body, text='Item sẽ "biến mất" nếu khớp — dừng cả Loop, coi như đã đạt.',
@@ -1239,7 +1537,17 @@ class ActionEditor(tk.Toplevel):
                      "keys": "+".join(keys),
                      "button": "left" if self.button_var.get() == "Trái" else "right"}
             elif t in POINT_TYPES:
-                a = {"type": t, "point": [int(self.x_var.get()), int(self.y_var.get())]}
+                if t == "right_click" and self.grid_on_var.get():
+                    if not self.grid_frame:
+                        raise ValueError("bật \"lấy từ nhiều ô\" thì phải căn lưới trước")
+                    if not self.grid_cells:
+                        raise ValueError("chưa tick ô nào trong lưới")
+                    a = {"type": t,
+                         "point": [int(self.x_var.get() or 0), int(self.y_var.get() or 0)],
+                         "grid": {"frame": [int(v) for v in self.grid_frame],
+                                  "cells": [[int(c[0]), int(c[1])] for c in self.grid_cells]}}
+                else:
+                    a = {"type": t, "point": [int(self.x_var.get()), int(self.y_var.get())]}
             elif t == "key_press":
                 k = self.key_var.get().strip()
                 if not k:
@@ -2300,6 +2608,33 @@ class AutoClickerApp:
                 self.status.set("Đã huỷ căn khung.")
 
         AbyssFrameSelector(self.root, frame, on_done)
+
+    def pick_inv_grid(self, frame, cells, callback, hide=None):
+        """Mở overlay căn lưới inventory + tick ô."""
+        self.status.set("Căn lưới: kéo cho trùm lưới, BẤM vào ô để chọn, Enter để lưu.")
+        if hide:
+            try:
+                hide.grab_release()
+            except Exception:
+                pass
+            hide.withdraw()
+        self.root.withdraw()
+
+        def on_done(res):
+            self.root.deiconify()
+            if hide:
+                hide.deiconify()
+                try:
+                    hide.grab_set()
+                except Exception:
+                    pass
+            if res:
+                self.status.set(f"Đã căn lưới, chọn {len(res[1])} ô.")
+                callback(res)
+            else:
+                self.status.set("Đã huỷ căn lưới.")
+
+        InvGridSelector(self.root, frame, cells, on_done)
 
     # ---- xem lại điểm đã chọn (toàn bộ Process) ----
     def review_points(self):

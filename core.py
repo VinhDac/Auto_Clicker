@@ -45,12 +45,19 @@ except Exception:
 # 10/11, chạy offline, không cần cài thêm chương trình ngoài nào.
 # Thiếu thư viện thì HAS_OCR=False và chỉ riêng hành động Abyss bị tắt, phần còn
 # lại của app vẫn chạy bình thường (giống cách HAS_CLIP đang làm).
+# Tách 2 cờ: chụp màn hình (Pillow) và ĐỌC CHỮ (winrt). Dò ô inventory còn/hết chỉ
+# cần chụp màn hình — thiếu mỗi winrt thì Abyss tắt nhưng tính năng đó vẫn chạy.
 try:
     from PIL import Image, ImageGrab, ImageStat
+    HAS_SCREEN = True
+except Exception:
+    HAS_SCREEN = False
+
+try:
     from winrt.windows.graphics.imaging import BitmapDecoder
     from winrt.windows.media.ocr import OcrEngine
     from winrt.windows.storage.streams import DataWriter, InMemoryRandomAccessStream
-    HAS_OCR = True
+    HAS_OCR = HAS_SCREEN
 except Exception:
     HAS_OCR = False
 
@@ -678,6 +685,10 @@ def validate_actions(actions, screen=None):
                 err("\"Giữ phím + click\" chưa chọn điểm click.", i)
         elif t == "key_press" and not is_valid_key(str(a.get("key", "")).strip().lower()):
             err(f"\"Nhấn phím\": phím không hợp lệ: {a.get('key', '')}", i)
+        if t in POINT_TYPES and a.get("grid"):
+            for p in inv_problems(a["grid"], screen):
+                problems.append({"severity": p["severity"], "message": p["message"], "index": i})
+            continue          # bật lưới thì điểm X/Y không dùng tới, khỏi soát
         point = a.get("point")
         if point and screen:
             sx, sy, sw, sh = screen
@@ -914,6 +925,10 @@ def action_summary(a):
         loc = f"@ ({pt[0]}, {pt[1]})" if pt else "(chưa chọn điểm)"
         return f"Giữ [{keys}] + click {btn} {loc}"
     if t in POINT_TYPES:
+        grid = a.get("grid")
+        if grid:
+            n = len(grid.get("cells") or [])
+            return (f"{ACTION_LABELS[t]} — lấy từ {n} ô đã tick, hết ô này tự sang ô sau")
         return f"{ACTION_LABELS[t]} @ ({a['point'][0]}, {a['point'][1]})"
     if t == "key_press":
         return f"Nhấn phím: {a.get('key', '')}"
@@ -931,6 +946,11 @@ def human_sleep(min_ms, max_ms, stop_flag):
         time.sleep(min(0.02, max(0.0, end - time.time())))
 
 
+class FatalActionError(Exception):
+    """Lỗi mà CHẠY TIẾP LÀ VÔ NGHĨA -> dừng ngay, không đếm đủ 3 lần như read_fail.
+    Vd: hết currency ở mọi ô đã tick — vòng sau có chạy cũng chẳng lấy được gì."""
+
+
 def _point_of(a):
     """Lấy toạ độ của hành động, báo lỗi RÕ RÀNG nếu thiếu.
 
@@ -946,7 +966,19 @@ def _point_of(a):
 def do_action(a, stop_flag, pre_click_ms=0):
     t = a["type"]
     if t in POINT_TYPES:
-        x, y = _point_of(a)
+        grid = a.get("grid")
+        if grid:
+            # Nâng cao: lấy từ nhiều ô — nhìn xem ô nào còn hàng rồi click ô đó,
+            # thay vì bám cứng 1 điểm.
+            frame, cells = grid.get("frame"), (grid.get("cells") or [])
+            hit = inv_first_filled(frame, cells) if frame and cells else None
+            if hit is None:
+                raise FatalActionError(
+                    f"hết currency ở cả {len(cells)} ô đã tick — dừng để khỏi chạy "
+                    f"không. Bỏ thêm currency vào rồi chạy lại.")
+            x, y = inv_cell_point(frame, hit[0], hit[1])
+        else:
+            x, y = _point_of(a)
         pyautogui.moveTo(x, y)
         if pre_click_ms > 0:
             human_sleep(pre_click_ms, pre_click_ms, stop_flag)
@@ -1151,7 +1183,7 @@ def ocr_text(image):
 
 def grab_screen(rect):
     """Chụp 1 vùng màn hình (x, y, w, h) -> ảnh PIL. None nếu không chụp được."""
-    if not HAS_OCR:
+    if not HAS_SCREEN:
         return None
     x, y, w, h = (int(v) for v in rect)
     if w <= 0 or h <= 0:
@@ -1160,6 +1192,116 @@ def grab_screen(rect):
         return ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
     except Exception:
         return None
+
+
+# ================= Lưới inventory (lấy currency từ nhiều ô) =================
+# Một stack currency có hạn, cạn là phải sang ô khác. Người dùng tick sẵn những ô
+# CHỨA ĐÚNG loại currency cần dùng; app chỉ việc nhìn xem ô nào CÒN HÀNG rồi
+# phải-click ô đầu tiên còn hàng.
+#
+# Cố tình KHÔNG đếm số lần đã dùng: đếm thì phải nhớ trạng thái xuyên vòng lặp và
+# xuyên cả lần chạy, mà chỉ cần khai lệch số lượng một cái là app phải-click ô rỗng
+# hàng chục lần mà vẫn tưởng còn hàng. Nhìn thì không có gì để lệch — bỏ thêm
+# currency giữa chừng hay dừng rồi chạy lại đều đúng.
+#
+# Inventory PoE2 luôn 12x5. Số đo lấy từ ảnh thật (stash_sample.png): lưới nằm
+# trong x 11..621, y 12..265 -> 610x253, ô 50.83 x 50.60 px. Ô ra VUÔNG (tỉ lệ
+# 1.004) — đó là phép thử cho thấy đọc đúng đường kẻ.
+INV_COLS = 12
+INV_ROWS = 5
+INV_ASPECT = 610 / 253          # khung luôn giữ tỉ lệ này khi phóng to/thu nhỏ
+
+# Chỉ đo phần LÕI giữa ô, bỏ 25% mỗi mép: vừa loại đường kẻ lưới và viền sáng của
+# ô đang chọn, vừa chịu được căn khung lệch. Đo thực tế: lệch tới 10px (1/5 ô) mà
+# ô trống vẫn 2.7-2.8 còn ô có đồ thấp nhất 19.4 — cách nhau 6.9 lần.
+INV_INSET = 0.25
+
+# "Độ chi tiết" = độ lệch chuẩn của pixel trong lõi ô.
+#   ô TRỐNG  : 2.7 - 3.8   (hoa văn nền lặp đều tăm tắp, 48/48 ô đo được đều vậy)
+#   ô CÓ ĐỒ  : 19.4 - 80.9 (món tối nhất trong kho vẫn 19.4)
+# Dùng độ chi tiết chứ KHÔNG dùng độ sáng: ô currency nền tối đọc sáng gần bằng ô
+# trống, nhưng độ chi tiết thì món nào cũng lổn nhổn như nhau.
+INV_ITEM_MIN_DETAIL = 10.0
+
+
+def inv_cell_box(frame, row, col):
+    """Ô (hàng, cột) -> (x, y, w, h) của TOÀN Ô."""
+    fx, fy, fw, fh = (float(v) for v in frame)
+    cw, ch = fw / INV_COLS, fh / INV_ROWS
+    return (int(fx + col * cw), int(fy + row * ch), int(cw), int(ch))
+
+
+def inv_cell_point(frame, row, col):
+    """Tâm ô — chỗ để phải-click."""
+    x, y, w, h = inv_cell_box(frame, row, col)
+    return (x + w // 2, y + h // 2)
+
+
+def inv_cell_patch(frame, row, col):
+    """Vùng LÕI giữa ô để đo còn/hết."""
+    x, y, w, h = inv_cell_box(frame, row, col)
+    ix, iy = int(w * INV_INSET), int(h * INV_INSET)
+    return (x + ix, y + iy, max(1, w - 2 * ix), max(1, h - 2 * iy))
+
+
+def cell_detail(image):
+    """Độ chi tiết của 1 ảnh ô. Càng cao càng chắc là có đồ."""
+    if image is None:
+        return 0.0
+    try:
+        return ImageStat.Stat(image.convert("L")).stddev[0]
+    except Exception:
+        return 0.0
+
+
+def inv_scan(frame, cells):
+    """Quét các ô đã tick. Trả về [(hàng, cột, còn_hàng, độ_chi_tiết), ...]
+    theo ĐÚNG thứ tự người dùng đã tick."""
+    out = []
+    for rc in cells:
+        try:
+            r, c = int(rc[0]), int(rc[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        d = cell_detail(grab_screen(inv_cell_patch(frame, r, c)))
+        out.append((r, c, d >= INV_ITEM_MIN_DETAIL, d))
+    return out
+
+
+def inv_first_filled(frame, cells):
+    """Ô ĐẦU TIÊN còn hàng theo thứ tự đã tick. Trả (hàng, cột) hoặc None."""
+    for r, c, co_hang, _ in inv_scan(frame, cells):
+        if co_hang:
+            return (r, c)
+    return None
+
+
+def inv_problems(grid, screen=None):
+    """Soát cấu hình lưới của 1 hành động. Trả [{"severity", "message"}]."""
+    out = []
+
+    def add(sev, msg):
+        out.append({"severity": sev, "message": msg})
+
+    frame = (grid or {}).get("frame")
+    if not frame or len(frame) != 4 or frame[2] <= 0 or frame[3] <= 0:
+        add("error", "\"Lấy từ nhiều ô\" chưa căn lưới — bấm \"🖼 Căn lưới\".")
+    else:
+        fx, fy, fw, fh = frame
+        if screen:
+            sx, sy, sw, sh = screen
+            if not (sx <= fx and sy <= fy and fx + fw <= sx + sw and fy + fh <= sy + sh):
+                add("warning", f"\"Lấy từ nhiều ô\": lưới ({fx}, {fy}) {fw}×{fh} nằm ngoài "
+                               f"màn hình hiện tại — có thể căn từ độ phân giải khác.")
+        if fw / INV_COLS < 20:
+            add("warning", f"\"Lấy từ nhiều ô\": lưới hơi nhỏ ({fw}×{fh}) — ô chỉ "
+                           f"{fw / INV_COLS:.0f}px, dò còn/hết dễ sai. Căn lại cho trùm đúng.")
+    if not ((grid or {}).get("cells") or []):
+        add("error", "\"Lấy từ nhiều ô\" chưa tick ô nào.")
+    if not HAS_SCREEN:
+        add("error", "\"Lấy từ nhiều ô\" cần thư viện Pillow để chụp màn hình. "
+                     "Cài:  pip install pillow")
+    return out
 
 
 # ================= Panel Abyss (Well of Souls) =================
@@ -1583,6 +1725,12 @@ class ProcessRunner:
                     do_action(a, self.stop_flag, pre_click_ms)
                 except pyautogui.FailSafeException:
                     self.stop_flag.set()
+                    return None, None
+                except FatalActionError as e:
+                    # Chạy tiếp là vô nghĩa -> chặn ngay, không đếm 3 lần.
+                    self.fatal = str(e)
+                    self.stop_flag.set()
+                    self._log(f"   ⛔ {e}", "err")
                     return None, None
                 except Exception as e:
                     # MỘT hành động hỏng KHÔNG được phép giết cả vòng chạy. Trước
