@@ -58,10 +58,7 @@ THEME = {
 
 # Màu nhấn chọn sẵn (vẫn chọn được màu tuỳ ý qua nút "Tuỳ chọn…")
 ACCENT_PRESETS = {
-    "Cam (dịu)": "#ffa657",       # mặc định — dễ nhìn nhất trên nền tối
-    "Cam (vừa)": "#f0883e",
-    "Cam (trầm)": "#e0913f",
-    "Cam (gắt)": "#ff7a1a",
+    "Cam": "#ffa657",             # mặc định — cam dịu, dễ nhìn nhất trên nền tối
     "Xanh dương": "#4a9eff",
     "Lục": "#3fb950",
     "Tím": "#a371f7",

@@ -80,7 +80,7 @@ SETTINGS_DEFAULT = {
     "hover_ms": 250,
     "copy_keys": "ctrl+c",
     "stop_hotkey": "f6",
-    "accent": "#ffa657",     # màu nhấn của giao diện (đổi trong Cài đặt)
+    "accent": "#ffa657",     # màu nhấn (đổi trong Cài đặt) — cam dịu, dịu mắt trên nền tối
 }
 
 
