@@ -27,7 +27,7 @@ FRAME = [300, 400, 517, 283]
 COND = [{"mod": "#% to Cold Resistance", "min_value": 20},
         {"mod": "# to all Attributes"}]
 ACTION = {"type": "abyss", "frame": list(FRAME), "conditions": [dict(c) for c in COND],
-          "rerolls": 2, "wait_ms": 350, "pick": core.ABYSS_PICK_FIRST, "name": "Abyss T1"}
+          "rerolls": 2, "wait_ms": 350, "name": "Abyss T1"}
 
 sandbox = tempfile.mkdtemp(prefix="abyss_tpl_")
 
@@ -47,8 +47,6 @@ check("dựng được hộp thoại", ed.winfo_exists())
 check("nạp đúng khung", ed.abyss_frame == FRAME, ed.abyss_frame)
 check("nạp đúng số reroll", ed.rerolls_var.get() == "2", ed.rerolls_var.get())
 check("nạp đúng thời gian chờ", ed.wait_var.get() == "350", ed.wait_var.get())
-check("nạp đúng kiểu chọn bừa",
-      ed.pick_var.get() == core.ABYSS_PICK_LABELS[core.ABYSS_PICK_FIRST], ed.pick_var.get())
 check("nạp đủ 2 điều kiện", len(ed.conditions) == 2, ed.conditions)
 check("nhãn khung hiện toạ độ", "300" in ed.frame_label.cget("text"),
       ed.frame_label.cget("text"))
@@ -61,8 +59,8 @@ root.update()
 a = ed.result
 check("lưu đúng loại", a["type"] == "abyss", a)
 check("giữ nguyên khung", a["frame"] == FRAME, a)
-check("giữ nguyên reroll/chờ/kiểu chọn",
-      (a["rerolls"], a["wait_ms"], a["pick"]) == (2, 350, core.ABYSS_PICK_FIRST), a)
+check("giữ nguyên reroll + thời gian chờ", (a["rerolls"], a["wait_ms"]) == (2, 350), a)
+check("KHÔNG còn khoá 'pick' (đã bỏ tuỳ chọn, luôn ngẫu nhiên)", "pick" not in a, a)
 check("giữ nguyên điều kiện", a["conditions"] == COND, a["conditions"])
 check("giữ tên tự đặt", a.get("name") == "Abyss T1", a)
 

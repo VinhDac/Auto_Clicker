@@ -61,7 +61,6 @@ REFRESH = R["refresh_point"]
 
 def make_action(**kw):
     a = {"type": "abyss", "frame": list(FRAME), "wait_ms": 0, "rerolls": 1,
-         "pick": core.ABYSS_PICK_FIRST,
          "conditions": [{"mod": "#% to Cold Resistance", "min_value": 20}]}
     a.update(kw)
     return a
@@ -113,14 +112,17 @@ st, pl, clicks, n = run(make_action(), [MISS_NOREFRESH])
 check("trả về NO_MATCH", st == core.CHECK_NO_MATCH, st)
 check("chỉ quét 1 lần (không cố reroll)", n == 1, n)
 check("KHÔNG bấm nút refresh", REFRESH not in clicks, clicks)
-check("click: REVEAL -> ô 1 -> CONFIRM", clicks == [CONFIRM, BAND[0], CONFIRM], clicks)
+check("click: REVEAL -> 1 ô bất kỳ -> CONFIRM",
+      len(clicks) == 3 and clicks[0] == CONFIRM and clicks[2] == CONFIRM
+      and clicks[1] in BAND, clicks)
 
 print("\n=== 4. Trượt cả sau khi reroll -> chọn bừa rồi CONFIRM ===")
 st, pl, clicks, n = run(make_action(), [MISS, MISS])
 check("trả về NO_MATCH", st == core.CHECK_NO_MATCH, st)
 check("quét 2 lần", n == 2, n)
-check("click: REVEAL -> refresh -> ô 1 -> CONFIRM",
-      clicks == [CONFIRM, REFRESH, BAND[0], CONFIRM], clicks)
+check("click: REVEAL -> refresh -> 1 ô bất kỳ -> CONFIRM",
+      len(clicks) == 4 and clicks[:2] == [CONFIRM, REFRESH]
+      and clicks[2] in BAND and clicks[3] == CONFIRM, clicks)
 
 print("\n=== 5. rerolls=0 -> không bao giờ bấm refresh ===")
 st, pl, clicks, n = run(make_action(rerolls=0), [MISS])
@@ -153,7 +155,7 @@ check("wait_ms=120 thì có chờ thật", _d1 > _d0, f"{_d1:.2f}s vs {_d0:.2f}s
 print("\n=== 8. Chọn bừa ngẫu nhiên thì phải nằm trong 3 ô ===")
 seen = set()
 for _ in range(40):
-    st, pl, clicks, n = run(make_action(pick=core.ABYSS_PICK_RANDOM), [MISS_NOREFRESH])
+    st, pl, clicks, n = run(make_action(), [MISS_NOREFRESH])
     seen.add(tuple(clicks[1]))
 check("mọi lần chọn đều là 1 trong 3 ô", seen <= {tuple(p) for p in BAND}, seen)
 check("có ngẫu nhiên thật (không phải luôn 1 ô)", len(seen) > 1, seen)

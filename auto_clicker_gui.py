@@ -801,7 +801,6 @@ class ActionEditor(tk.Toplevel):
         self.minval_var = tk.StringVar()
         self.rerolls_var = tk.StringVar(value=str(ABYSS_DEFAULT_REROLLS))
         self.wait_var = tk.StringVar(value=str(ABYSS_DEFAULT_WAIT_MS))
-        self.pick_var = tk.StringVar(value=ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM])
         self.abyss_frame = None
         self.excl_box = None
         self.conditions = copy.deepcopy(action.get("conditions", [])) if action else []
@@ -811,8 +810,6 @@ class ActionEditor(tk.Toplevel):
             self.abyss_frame = list(fr) if fr else None
             self.rerolls_var.set(str(action.get("rerolls", ABYSS_DEFAULT_REROLLS)))
             self.wait_var.set(str(action.get("wait_ms", ABYSS_DEFAULT_WAIT_MS)))
-            self.pick_var.set(ABYSS_PICK_LABELS.get(action.get("pick", ABYSS_PICK_RANDOM),
-                                                    ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM]))
         if action and action.get("type") == "mod_click":
             keys = parse_hold_keys(action.get("keys"))
             self.k_shift.set("shift" in keys)
@@ -983,12 +980,6 @@ class ActionEditor(tk.Toplevel):
         ttk.Entry(r2, textvariable=self.rerolls_var, width=5).pack(side="left", padx=(4, 12))
         ttk.Label(r2, text="Chờ sau mỗi lần bấm (ms):").pack(side="left")
         ttk.Entry(r2, textvariable=self.wait_var, width=6).pack(side="left", padx=4)
-
-        r3 = ttk.Frame(self.body)
-        r3.pack(fill="x", pady=(6, 0))
-        ttk.Label(r3, text="Không ra mod thì chọn:").pack(side="left")
-        ttk.OptionMenu(r3, self.pick_var, self.pick_var.get(),
-                       *ABYSS_PICK_LABELS.values()).pack(side="left", padx=(4, 0))
 
         ttk.Label(self.body, text="Tìm mod:").pack(anchor="w", pady=(10, 0))
         se = ttk.Entry(self.body, textvariable=self.search_var)
@@ -1210,7 +1201,7 @@ class ActionEditor(tk.Toplevel):
                      "frame": [int(v) for v in self.abyss_frame],
                      "conditions": [dict(c) for c in self.conditions],
                      "rerolls": rr, "wait_ms": wm,
-                     "pick": ABYSS_PICK_FROM_LABEL.get(self.pick_var.get(), ABYSS_PICK_RANDOM)}
+                     }
                 if self.excludes:          # rỗng thì không ghi, cho file gọn
                     a["excludes"] = [dict(e) for e in self.excludes]
             elif t == "mod_click":

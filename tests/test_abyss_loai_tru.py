@@ -63,7 +63,6 @@ M_LIFE = "# to maximum Life"
 
 def act(**kw):
     a = {"type": "abyss", "frame": list(FRAME), "wait_ms": 0, "rerolls": 1,
-         "pick": core.ABYSS_PICK_RANDOM,
          "conditions": [{"mod": M_LIFE}]}          # không bao giờ khớp -> luôn rơi vào chọn bừa
     a.update(kw)
     return a
@@ -230,7 +229,7 @@ app = m.AutoClickerApp(root)
 root.update()
 
 A = {"type": "abyss", "frame": list(FRAME), "conditions": [{"mod": M_LIFE}],
-     "rerolls": 1, "wait_ms": 0, "pick": "random",
+     "rerolls": 1, "wait_ms": 0,
      "excludes": [{"mod": M_COLD}, {"mod": M_CAST}]}
 ed = m.ActionEditor(root, app, A)
 root.update()

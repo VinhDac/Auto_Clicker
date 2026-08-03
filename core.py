@@ -1192,13 +1192,6 @@ ABYSS_REFRESH_MIN_WARM = 8.0
 ABYSS_DEFAULT_REROLLS = 1
 ABYSS_DEFAULT_WAIT_MS = 500
 ABYSS_MAX_REROLLS = 10
-ABYSS_PICK_RANDOM = "random"
-ABYSS_PICK_FIRST = "first"
-ABYSS_PICK_LABELS = {
-    ABYSS_PICK_RANDOM: "Ngẫu nhiên",
-    ABYSS_PICK_FIRST: "Luôn ô đầu tiên",
-}
-ABYSS_PICK_FROM_LABEL = {v: k for k, v in ABYSS_PICK_LABELS.items()}
 
 
 def abyss_regions(frame):
@@ -1423,7 +1416,6 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
     wait_ms = a.get("wait_ms")
     wait_ms = ABYSS_DEFAULT_WAIT_MS if wait_ms is None else max(0, int(wait_ms))
     rerolls = max(0, min(int(a.get("rerolls", ABYSS_DEFAULT_REROLLS)), ABYSS_MAX_REROLLS))
-    pick_mode = a.get("pick", ABYSS_PICK_RANDOM)
 
     def click(point):
         pyautogui.moveTo(point[0], point[1])
@@ -1489,7 +1481,7 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
             return CHECK_STOP, ("cả 3 ô đều nằm trong danh sách loại trừ và đã hết lượt "
                                 "reroll — dừng để không chốt phải mod bạn đã cấm. "
                                 "Panel Abyss đang mở, hãy tự chọn rồi chạy lại.")
-        pick = allowed[0] if pick_mode == ABYSS_PICK_FIRST else random.choice(allowed)
+        pick = random.choice(allowed)
         if log:
             log(f"   ⏭ không ra mod mong muốn → chọn ô {pick + 1} rồi CONFIRM", "skip")
         choose(pick)
