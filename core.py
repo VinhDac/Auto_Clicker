@@ -685,6 +685,15 @@ def validate_actions(actions, screen=None):
                 err("\"Giữ phím + click\" chưa chọn điểm click.", i)
         elif t == "key_press" and not is_valid_key(str(a.get("key", "")).strip().lower()):
             err(f"\"Nhấn phím\": phím không hợp lệ: {a.get('key', '')}", i)
+        elif t == "move_wasd":
+            loi = wasd_problem(a.get("keys"))
+            if loi:
+                err(f"\"Di chuyển\": {loi}.", i)
+            try:
+                if int(a.get("ms", MOVE_DEFAULT_MS)) <= 0:
+                    err("\"Di chuyển\": thời gian giữ phải lớn hơn 0 ms.", i)
+            except (TypeError, ValueError):
+                err("\"Di chuyển\": thời gian giữ không phải là số.", i)
         if t in POINT_TYPES and a.get("grid"):
             for p in inv_problems(a["grid"], screen):
                 problems.append({"severity": p["severity"], "message": p["message"], "index": i})
@@ -826,15 +835,61 @@ def validate_process(steps, has_clip=None, screen=None):
 
 
 # ---------------- Hành động ----------------
-ACTION_TYPES = ["left_click", "right_click", "mod_click", "key_press", "delay",
-                "check_mod", "abyss"]
+ACTION_TYPES = ["left_click", "right_click", "mod_click", "key_press", "move_wasd",
+                "delay", "check_mod", "abyss"]
 ACTION_LABELS = {
     "left_click": "Trái-click", "right_click": "Phải-click",
     "mod_click": "Giữ phím + click",
     "key_press": "Nhấn phím", "delay": "Delay",
+    "move_wasd": "🎮 Di chuyển (WASD)",
     "check_mod": "🔍 Kiểm tra mod",
     "abyss": "🌀 Abyss — chọn mod",
 }
+
+# ---- Di chuyển WASD ----
+# W/S và A/D là 2 TRỤC ngược nhau: giữ cả hai là triệt tiêu, nhân vật đứng im.
+# Giao diện cho tick W thì tự bỏ S (và ngược lại), nên trạng thái sai KHÔNG THỂ
+# tạo ra được — khỏi cần luật chặn. Hệ quả: nhiều nhất 2 phím, không bao giờ
+# ngược chiều, đúng 8 hướng đi được.
+WASD_OPPOSITE = {"w": "s", "s": "w", "a": "d", "d": "a"}
+WASD_ORDER = ["w", "s", "a", "d"]          # thứ tự chuẩn khi ghi ra: dọc trước, ngang sau
+WASD_NAMES = {"w": "lên", "s": "xuống", "a": "trái", "d": "phải"}
+WASD_PAIR_NAMES = {
+    ("w", "a"): "chéo lên-trái", ("w", "d"): "chéo lên-phải",
+    ("s", "a"): "chéo xuống-trái", ("s", "d"): "chéo xuống-phải",
+}
+MOVE_DEFAULT_MS = 1000
+
+
+def wasd_sort(keys):
+    """Sắp phím theo thứ tự chuẩn (dọc trước) để chuỗi lưu ra luôn ổn định."""
+    return [k for k in WASD_ORDER if k in keys]
+
+
+def wasd_display(keys):
+    """'w+a' -> 'W+A (chéo lên-trái)'. Dùng cho mô tả trong danh sách hành động."""
+    ks = wasd_sort(parse_hold_keys(keys) if isinstance(keys, str) else keys)
+    if not ks:
+        return "(chưa chọn hướng)"
+    ten = WASD_PAIR_NAMES.get(tuple(ks)) if len(ks) == 2 else WASD_NAMES.get(ks[0])
+    return f"{'+'.join(k.upper() for k in ks)}" + (f" ({ten})" if ten else "")
+
+
+def wasd_problem(keys):
+    """Lý do bộ phím không hợp lệ, hoặc None nếu ổn. Giao diện không tạo ra được
+    trạng thái sai, nhưng file sửa tay thì có — phải bắt."""
+    ks = parse_hold_keys(keys) if isinstance(keys, str) else list(keys or [])
+    if not ks:
+        return "chưa chọn hướng nào"
+    la = [k for k in ks if k not in WASD_OPPOSITE]
+    if la:
+        return f"chỉ dùng được W/A/S/D, gặp: {', '.join(la)}"
+    if len(set(ks)) > 2:
+        return f"nhiều nhất 2 hướng, đang có {len(set(ks))}"
+    for k in ks:
+        if WASD_OPPOSITE[k] in ks:
+            return f"{k.upper()} và {WASD_OPPOSITE[k].upper()} ngược chiều nhau, giữ cả hai thì đứng im"
+    return None
 # Hành động có thể kết thúc sớm cả Loop khi đạt mục tiêu.
 GOAL_TYPES = ("check_mod", "abyss")
 
@@ -930,6 +985,8 @@ def action_summary(a):
             n = len(grid.get("cells") or [])
             return (f"{ACTION_LABELS[t]} — lấy từ {n} ô đã tick, hết ô này tự sang ô sau")
         return f"{ACTION_LABELS[t]} @ ({a['point'][0]}, {a['point'][1]})"
+    if t == "move_wasd":
+        return f"🎮 Di chuyển {wasd_display(a.get('keys'))} trong {a.get('ms', MOVE_DEFAULT_MS)}ms"
     if t == "key_press":
         return f"Nhấn phím: {a.get('key', '')}"
     if t == "delay":
@@ -1007,6 +1064,30 @@ def do_action(a, stop_flag, pre_click_ms=0):
         finally:
             # LUÔN thả phím, kể cả khi click ném lỗi hoặc bị dừng giữa chừng —
             # nếu không, phím Shift/Ctrl sẽ kẹt ở trạng thái giữ trong cả hệ thống.
+            for k in reversed(held):
+                try:
+                    pyautogui.keyUp(k)
+                except Exception:
+                    pass
+    elif t == "move_wasd":
+        # Kiểm tra trên phím THÔ, TRƯỚC khi sắp xếp: wasd_sort() lọc bỏ phím lạ,
+        # kiểm tra sau nó thì "w+q" lặng lẽ thành "w" và chẳng ai biết.
+        raw = parse_hold_keys(a.get("keys"))
+        loi = wasd_problem(raw)
+        if loi:
+            raise ValueError(f"hướng di chuyển không hợp lệ: {loi}")
+        keys = wasd_sort(raw)
+        ms = max(0, int(a.get("ms", MOVE_DEFAULT_MS)))
+        held = []
+        try:
+            for k in keys:
+                pyautogui.keyDown(k)
+                held.append(k)
+            # human_sleep dò stop_flag mỗi 20ms -> giữ W 5 giây mà bấm F6 vẫn nhả
+            # ra ngay, không phải chờ hết giờ.
+            human_sleep(ms, ms, stop_flag)
+        finally:
+            # LUÔN thả, kể cả khi bị dừng giữa chừng — không thì nhân vật chạy mãi.
             for k in reversed(held):
                 try:
                     pyautogui.keyUp(k)

@@ -25,6 +25,7 @@ Mã thoát 0 = tất cả đạt. Từng bài cũng chạy riêng được:
 | `test_abyss_giao_dien.py` | Hộp thoại Abyss, overlay căn khung, lưu/mở template |
 | `test_abyss_loai_tru.py` | Danh sách loại trừ: không chốt mod bị cấm, cả 3 ô bị cấm thì reroll rồi dừng |
 | `test_luoi_inventory.py` | Lấy currency từ nhiều ô: dò ô còn/hết trên `stash_sample.png`, chịu lệch khung, hết thì dừng |
+| `test_di_chuyen.py` | Di chuyển WASD: 8 hướng hợp lệ, W/S và A/D tự triệt tiêu, dừng giữa chừng vẫn thả phím |
 | `test_giu_shift.py` | Tick "Giữ Shift suốt Loop" + gia cố `mod_click` |
 | `test_hop_thoai_hanh_dong.py` | Hộp thoại hành động không được chứa widget chiếm grab toàn cục |
 | `test_them_hanh_dong.py` | Thêm/sửa/xoá/copy hành động qua nhiều Loop, setup dài 40 hành động, lưu & mở lại |

@@ -175,7 +175,7 @@ for t, act in samples.items():
         root.update()
     except Exception as e:
         bad.append((t, repr(e)))
-check("cả 7 loại mở được không lỗi", not bad, bad)
+check("cả 8 loại mở được không lỗi", not bad, bad)
 
 print("\n=== 6. Đổi loại giữa Abyss và check_mod ngay trong hộp thoại ===")
 try:
@@ -198,7 +198,7 @@ print("\n=== 7. Đã gỡ 3 loại không dùng: move / double_click / scroll ==
 go_bo = {"move", "double_click", "scroll"}
 check("không còn trong danh sách loại", not go_bo & set(core.ACTION_TYPES),
       core.ACTION_TYPES)
-check("còn đúng 7 loại", len(core.ACTION_TYPES) == 7, core.ACTION_TYPES)
+check("còn đúng 8 loại", len(core.ACTION_TYPES) == 8, core.ACTION_TYPES)
 check("POINT_TYPES chỉ còn trái/phải click",
       set(core.POINT_TYPES) == {"left_click", "right_click"}, core.POINT_TYPES)
 for t in go_bo:

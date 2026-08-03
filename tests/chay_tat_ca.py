@@ -21,6 +21,7 @@ AN_TOAN = [
     ("test_abyss_giao_dien.py", "Abyss: hộp thoại, căn khung, lưu/mở template"),
     ("test_abyss_loai_tru.py", "Abyss: danh sách loại trừ, cấm hết thì dừng"),
     ("test_luoi_inventory.py", "Lấy currency nhiều ô: dò ô còn/hết trên ảnh kho thật"),
+    ("test_di_chuyen.py", "Di chuyển WASD: giữ đúng phím, luôn thả, không tổ hợp sai"),
     ("test_giu_shift.py", "Giữ Shift suốt Loop + gia cố mod_click"),
     ("test_hop_thoai_hanh_dong.py", "Hộp thoại hành động: không widget nào chiếm grab"),
     ("test_them_hanh_dong.py", "Thêm/sửa/xoá/copy hành động qua nhiều Loop"),

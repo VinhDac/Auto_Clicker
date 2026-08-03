@@ -1045,6 +1045,9 @@ class ActionEditor(tk.Toplevel):
         self.wait_var = tk.StringVar(value=str(ABYSS_DEFAULT_WAIT_MS))
         self.abyss_frame = None
         self.excl_box = None
+        self.wasd_vars = {k: tk.BooleanVar(value=False) for k in ("w", "a", "s", "d")}
+        self.move_ms_var = tk.StringVar(value=str(MOVE_DEFAULT_MS))
+        self.move_lbl = None
         self.grid_on_var = tk.BooleanVar(value=False)
         self.grid_frame = None
         self.grid_cells = []
@@ -1056,6 +1059,11 @@ class ActionEditor(tk.Toplevel):
             self.abyss_frame = list(fr) if fr else None
             self.rerolls_var.set(str(action.get("rerolls", ABYSS_DEFAULT_REROLLS)))
             self.wait_var.set(str(action.get("wait_ms", ABYSS_DEFAULT_WAIT_MS)))
+        if action and action.get("type") == "move_wasd":
+            for k in parse_hold_keys(action.get("keys")):
+                if k in self.wasd_vars:
+                    self.wasd_vars[k].set(True)
+            self.move_ms_var.set(str(action.get("ms", MOVE_DEFAULT_MS)))
         if action and (action.get("grid") or {}).get("frame"):
             g = action["grid"]
             self.grid_on_var.set(True)
@@ -1161,6 +1169,8 @@ class ActionEditor(tk.Toplevel):
             ttk.Entry(self.body, textvariable=self.y_var, width=8).grid(row=2, column=3, sticky="w")
             ttk.Button(self.body, text="🎯 Chọn điểm (crosshair)", command=self._pick).grid(
                 row=3, column=0, columnspan=4, pady=(8, 0), sticky="ew")
+        elif t == "move_wasd":
+            self._render_move_wasd()
         elif t == "key_press":
             ttk.Label(self.body, text="Phím (vd: enter, a, space, escape):").grid(row=0, column=0, sticky="w")
             ttk.Entry(self.body, textvariable=self.key_var, width=14).grid(row=0, column=1, padx=6)
@@ -1172,6 +1182,60 @@ class ActionEditor(tk.Toplevel):
         # Vẽ lại ruột xong thì co giãn cửa sổ theo. Bỏ dòng này là quay lại đúng
         # cái bệnh cũ: đổi Loại mà cửa sổ đứng im -> loại nhỏ trống, loại to bị cắt.
         self._fit_window()
+
+    def _render_move_wasd(self):
+        """4 ô tick xếp đúng hình phím WASD. Tick W thì S tự bỏ (và A/D cũng vậy),
+        nên KHÔNG THỂ tạo ra tổ hợp ngược chiều hay quá 2 phím — luật tự thoả mãn,
+        không cần hộp báo lỗi nào."""
+        ttk.Label(self.body, text="Hướng đi:").grid(row=0, column=0, sticky="nw", pady=(2, 0))
+        pad = ttk.Frame(self.body)
+        pad.grid(row=0, column=1, sticky="w", padx=(4, 0))
+        ttk.Checkbutton(pad, text="W", variable=self.wasd_vars["w"],
+                        command=lambda: self._wasd_toggled("w")).grid(row=0, column=1, padx=2)
+        ttk.Checkbutton(pad, text="A", variable=self.wasd_vars["a"],
+                        command=lambda: self._wasd_toggled("a")).grid(row=1, column=0, padx=2)
+        ttk.Checkbutton(pad, text="S", variable=self.wasd_vars["s"],
+                        command=lambda: self._wasd_toggled("s")).grid(row=1, column=1, padx=2)
+        ttk.Checkbutton(pad, text="D", variable=self.wasd_vars["d"],
+                        command=lambda: self._wasd_toggled("d")).grid(row=1, column=2, padx=2)
+
+        r = ttk.Frame(self.body)
+        r.grid(row=1, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ttk.Label(r, text="Giữ trong:").pack(side="left")
+        ttk.Entry(r, textvariable=self.move_ms_var, width=8).pack(side="left", padx=4)
+        ttk.Label(r, text="ms").pack(side="left")
+        self.move_ms_var.trace_add("write", lambda *_: self._refresh_move_label())
+
+        self.move_lbl = ttk.Label(self.body, style="Muted.TLabel", text="")
+        self.move_lbl.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Label(self.body, style="Muted.TLabel",
+                  text="W/S và A/D ngược chiều nhau nên không tick cùng lúc được —\n"
+                       "tick cái này thì cái kia tự bỏ. Đang giữ mà bấm Dừng/F6 thì nhả ngay."
+                  ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._refresh_move_label()
+
+    def _wasd_toggled(self, key):
+        """Tick 1 hướng -> tự bỏ hướng ngược lại."""
+        if self.wasd_vars[key].get():
+            self.wasd_vars[WASD_OPPOSITE[key]].set(False)
+        self._refresh_move_label()
+
+    def _wasd_keys(self):
+        return wasd_sort([k for k, v in self.wasd_vars.items() if v.get()])
+
+    def _refresh_move_label(self):
+        if not getattr(self, "move_lbl", None):
+            return
+        ks = self._wasd_keys()
+        if not ks:
+            self.move_lbl.config(text="→ chưa chọn hướng nào")
+            return
+        try:
+            ms = int(self.move_ms_var.get() or 0)
+        except ValueError:
+            ms = 0
+        self.move_lbl.config(text=f"→ giữ {wasd_display(ks)} trong {ms} ms "
+                                  f"({ms / 1000:.1f} giây)")
 
     def _render_grid_advanced(self, row):
         """Tuỳ chọn NÂNG CAO của right_click: lấy từ nhiều ô, hết ô này sang ô sau.
@@ -1561,6 +1625,14 @@ class ActionEditor(tk.Toplevel):
                                   "cells": [[int(c[0]), int(c[1])] for c in self.grid_cells]}}
                 else:
                     a = {"type": t, "point": [int(self.x_var.get()), int(self.y_var.get())]}
+            elif t == "move_wasd":
+                ks = self._wasd_keys()
+                if not ks:
+                    raise ValueError("chưa tick hướng đi nào")
+                ms = int(self.move_ms_var.get())
+                if ms <= 0:
+                    raise ValueError("thời gian giữ phải lớn hơn 0 ms")
+                a = {"type": t, "keys": "+".join(ks), "ms": ms}
             elif t == "key_press":
                 k = self.key_var.get().strip()
                 if not k:

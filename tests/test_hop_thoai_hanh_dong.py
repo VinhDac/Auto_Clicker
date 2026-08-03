@@ -52,7 +52,7 @@ for t in core.ACTION_TYPES:
         bad[t] = len(cbs)
     ed.destroy()
     root.update()
-check("cả 10 loại đều không có TCombobox", not bad, bad)
+check("mọi loại đều không có TCombobox", not bad, bad)
 
 print("\n=== 1b. Cửa sổ vừa khít nội dung từng loại (không thừa, không cắt chữ) ===")
 # BẮT BUỘC deiconify: cửa sổ con của root đang withdraw thì chưa được map,
