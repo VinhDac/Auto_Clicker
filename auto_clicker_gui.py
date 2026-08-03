@@ -1439,7 +1439,8 @@ class AutoClickerApp:
         ssb.pack(side="right", fill="y")
         self.step_box.bind("<<ListboxSelect>>", self._on_step_select)
         self.step_box.bind("<F2>", self.rename_step)
-        self._enable_drag_reorder(self.step_box, lambda: self.steps, self._steps_reordered)
+        self._enable_drag_reorder(self.step_box, lambda: self.steps, self._steps_reordered,
+                                  on_moved=self._step_moved)
 
         sb1 = ttk.Frame(lwrap)
         sb1.pack(fill="x", pady=(6, 0))
@@ -1600,9 +1601,18 @@ class AutoClickerApp:
             self.step_box.selection_set(self.cur)
         self.refresh_problems()
 
+    def _step_moved(self, new_index):
+        """Kéo-thả bước -> con trỏ bước đi THEO dòng vừa kéo.
+
+        Không có cái này thì dòng sáng một đằng, self.cur một nẻo: bấm "➕ Thêm"
+        sẽ nhét hành động vào Loop KHÁC với Loop đang sáng, người dùng tưởng hành
+        động biến mất."""
+        self.cur = max(0, min(new_index, len(self.steps) - 1))
+
     def _steps_reordered(self):
-        """Sau khi kéo-thả bước: giữ đúng bước đang chọn theo vị trí mới."""
-        self.refresh_steps()
+        """Sau khi kéo-thả bước: vẽ lại CẢ khung bên phải theo bước vừa kéo,
+        không chỉ vẽ lại danh sách bước."""
+        self.select_step(self.cur)
 
     def _on_step_select(self, event=None):
         sel = self.step_box.curselection()
@@ -1914,9 +1924,14 @@ class AutoClickerApp:
     def _sel_indices(self):
         return list(self.listbox.curselection())
 
-    def _enable_drag_reorder(self, listbox, get_list, on_refresh):
+    def _enable_drag_reorder(self, listbox, get_list, on_refresh, on_moved=None):
         """Cho phép kéo-thả 1 dòng để đổi vị trí trong danh sách (Hành động / Điều kiện).
-        Kéo sẽ CHÈN dòng vào đúng vị trí thả (các dòng ở giữa tự dồn), không phải hoán đổi."""
+        Kéo sẽ CHÈN dòng vào đúng vị trí thả (các dòng ở giữa tự dồn), không phải hoán đổi.
+
+        `on_moved(vị_trí_mới)` gọi NGAY SAU khi đổi chỗ và TRƯỚC khi vẽ lại, để bên
+        gọi kịp cập nhật "dòng đang chọn" của mình. Bắt buộc với danh sách BƯỚC:
+        listbox tự đặt dòng sáng, mà đặt bằng code thì KHÔNG kích hoạt
+        <<ListboxSelect>> -> self.cur không bao giờ được sửa lại."""
         state = {"idx": None}
 
         def on_start(event):
@@ -1935,6 +1950,8 @@ class AutoClickerApp:
             if i != state["idx"]:
                 item = lst.pop(state["idx"])
                 lst.insert(i, item)
+                if on_moved:
+                    on_moved(i)
                 on_refresh()
                 listbox.selection_clear(0, tk.END)
                 listbox.selection_set(i)

@@ -1286,7 +1286,10 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
         return CHECK_READ_FAIL, "hành động Abyss chưa có điều kiện nào"
 
     regions = abyss_regions(frame)
-    wait_ms = int(a.get("wait_ms") or ABYSS_DEFAULT_WAIT_MS)
+    # KHÔNG dùng `a.get(...) or MẶC_ĐỊNH`: số 0 là giá trị hợp lệ (không chờ) nhưng
+    # lại falsy nên sẽ bị đá về 500ms một cách âm thầm.
+    wait_ms = a.get("wait_ms")
+    wait_ms = ABYSS_DEFAULT_WAIT_MS if wait_ms is None else max(0, int(wait_ms))
     rerolls = max(0, min(int(a.get("rerolls", ABYSS_DEFAULT_REROLLS)), ABYSS_MAX_REROLLS))
     pick_mode = a.get("pick", ABYSS_PICK_RANDOM)
 
