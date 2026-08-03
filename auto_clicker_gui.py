@@ -278,21 +278,24 @@ def enable_dpi(root):
 
 
 def center_window(win, w=None, h=None):
-    """Đặt cửa sổ ra giữa màn hình. Nếu w/h không cho, tự lấy theo nội dung."""
+    """Đặt cửa sổ ra giữa màn hình.
+
+    KHÔNG cho w/h -> chỉ đặt VỊ TRÍ, để Tk tự co theo nội dung.
+    Từng ép cả kích thước ở đây và nó cắn: cửa sổ đang ẩn thì winfo_width() trả 1
+    nên phải hỏi winfo_reqwidth(), mà giá trị đó có lúc CHƯA tính xong (trong bản
+    đóng gói đo được 216x239 thay vì 341x395). Ép size sai vào một cửa sổ không cho
+    co giãn là nội dung bị cắt vĩnh viễn. Chỉ đặt vị trí thì tệ nhất là lệch tâm
+    một chút — không bao giờ mất chữ."""
     win.update_idletasks()
-    if not w:
-        w = win.winfo_width()
-        if w <= 1:
-            w = win.winfo_reqwidth()
-    if not h:
-        h = win.winfo_height()
-        if h <= 1:
-            h = win.winfo_reqheight()
-    sw = win.winfo_screenwidth()
-    sh = win.winfo_screenheight()
-    x = max(0, (sw - w) // 2)
-    y = max(0, (sh - h) // 2 - 30)
-    win.geometry(f"{w}x{h}+{x}+{y}")
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    if w and h:
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2 - 30)
+        win.geometry(f"{w}x{h}+{x}+{y}")
+        return
+    x = max(0, (sw - max(win.winfo_width(), win.winfo_reqwidth())) // 2)
+    y = max(0, (sh - max(win.winfo_height(), win.winfo_reqheight())) // 2 - 30)
+    win.geometry(f"+{x}+{y}")
 
 
 # ---------------- Overlay crosshair chọn 1 điểm ----------------
@@ -922,6 +925,7 @@ class TemplatePicker(tk.Toplevel):
         self.result = None
         self.title(title)
         self.transient(master)
+        self.withdraw()          # dựng xong mới hiện, khỏi loé (xem ActionEditor)
         self.resizable(False, False)
 
         pad = ttk.Frame(self, padding=12)
@@ -954,7 +958,8 @@ class TemplatePicker(tk.Toplevel):
         set_window_icon(self)
         center_window(self, 460, 380)
         dark_titlebar(self)
-        self.after(80, self.grab_set)
+        self.deiconify()
+        self.grab_set()          # hết cần after(80) hoãn binh: cửa sổ đã hiện hẳn
 
     def _reload(self):
         self.items = list_templates(self.kind)
@@ -1009,7 +1014,10 @@ class ActionEditor(tk.Toplevel):
         self.result = None
         self.title("Hành động")
         self.transient(master)
-        self.grab_set()
+        # ẨN ngay, dựng xong xuôi mới hiện. Không có dòng này thì grab_set() làm Tk
+        # hiện cửa sổ ra sớm, và người dùng nhìn thấy nó loé ở góc (0,0) rồi mới
+        # nhảy về giữa, đổi bề rộng, tô lại màu, đổi thanh tiêu đề sáng->tối.
+        self.withdraw()
         self.resizable(False, False)
         self.type_var = tk.StringVar(value=(action["type"] if action else "left_click"))
         top = ttk.Frame(self, padding=10)
@@ -1095,6 +1103,8 @@ class ActionEditor(tk.Toplevel):
         set_window_icon(self)
         self._fit_window(center=True)
         dark_titlebar(self)
+        self.deiconify()        # giờ mới hiện — đã hoàn chỉnh, không còn gì để sửa
+        self.grab_set()         # grab đòi cửa sổ đang hiện, nên phải sau deiconify
 
     # Bề rộng CỐ ĐỊNH cho mọi loại: loại rộng nhất cần 470px nên vẫn dư, mà giữ
     # nguyên bề rộng thì đổi Loại cửa sổ chỉ co giãn theo chiều dọc, nhìn êm —
@@ -1104,27 +1114,27 @@ class ActionEditor(tk.Toplevel):
     def _fit_window(self, center=False):
         """Cho cửa sổ vừa khít nội dung của loại hành động đang chọn.
 
-        Mỗi loại cần chiều cao khác nhau rất xa (Delay 191px, Abyss 784px). Trước
-        đây đóng đinh 880 cho tất cả -> loại nhỏ trống huếch tới 689px. Hỏi thẳng
-        Tk xem nội dung cần bao nhiêu thì không còn con số nào để lệch về sau."""
+        KHÔNG ép chiều cao bằng geometry: minsize giữ bề rộng 520, còn CHIỀU CAO
+        để Tk tự co theo nội dung. Ép chiều cao từng làm hộp thoại Cài đặt bị cắt
+        cụt trong bản đóng gói — winfo_reqheight() có lúc chưa tính xong mà cửa sổ
+        lại không cho co giãn nên hỏng vĩnh viễn. Tự co thì luôn đúng."""
+        self.minsize(self.WIDTH, 1)
         self.update_idletasks()
-        h = self.winfo_reqheight()
+        h = max(self.winfo_height(), self.winfo_reqheight())
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        h = min(h, sh - 80)                 # màn hình thấp thì đừng tràn khỏi desktop
         if center:
             x = max(0, (sw - self.WIDTH) // 2)
             y = max(0, (sh - h) // 2 - 30)
         else:
-            # Đổi Loại thì GIỮ NGUYÊN chỗ cửa sổ đang đứng, chỉ đổi chiều cao —
-            # nhảy về giữa màn hình mỗi lần đổi Loại rất khó chịu.
+            # Đổi Loại thì GIỮ NGUYÊN chỗ cửa sổ đang đứng — nhảy về giữa màn hình
+            # mỗi lần đổi Loại rất khó chịu. Chỉ đẩy lên nếu sắp tràn đáy.
             x = max(0, min(self.winfo_x(), sw - self.WIDTH))
             y = max(0, min(self.winfo_y(), sh - h - 40))
-        self.geometry(f"{self.WIDTH}x{h}+{x}+{y}")
+        self.geometry(f"+{x}+{y}")
 
     def _render(self):
         for w in self.body.winfo_children():
             w.destroy()
-        self.after_idle(lambda: restyle_tree(self.body))   # widget vừa dựng -> tô lại
         t = self.type_var.get()
         if t == "check_mod":
             self._render_check_mod()
@@ -1176,6 +1186,9 @@ class ActionEditor(tk.Toplevel):
             ttk.Entry(self.body, textvariable=self.min_var, width=8).grid(row=0, column=1)
             ttk.Label(self.body, text="Max ms:").grid(row=0, column=2, sticky="w", padx=(10, 0))
             ttk.Entry(self.body, textvariable=self.max_var, width=8).grid(row=0, column=3)
+        # Tô màu NGAY, không hoãn sang vòng nhàn rỗi: widget tk cổ điển (Listbox…)
+        # sinh ra với nền trắng, hoãn lại là loé trắng một khung hình khi đổi Loại.
+        restyle_tree(self.body)
         # Vẽ lại ruột xong thì co giãn cửa sổ theo. Bỏ dòng này là quay lại đúng
         # cái bệnh cũ: đổi Loại mà cửa sổ đứng im -> loại nhỏ trống, loại to bị cắt.
         self._fit_window()
@@ -1660,7 +1673,7 @@ class SettingsDialog(tk.Toplevel):
         s = app.settings
         self.title("⚙ Cài đặt")
         self.transient(master)
-        self.grab_set()
+        self.withdraw()          # dựng xong mới hiện, khỏi loé (xem ActionEditor)
         self.resizable(False, False)
         pad = ttk.Frame(self, padding=12)
         pad.pack(fill="both", expand=True)
@@ -1717,6 +1730,8 @@ class SettingsDialog(tk.Toplevel):
         set_window_icon(self)
         center_window(self)
         dark_titlebar(self)
+        self.deiconify()
+        self.grab_set()
 
     # ---- màu nhấn ----
     def _apply_accent(self, color):

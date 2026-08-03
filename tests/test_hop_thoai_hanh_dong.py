@@ -91,6 +91,96 @@ ed.destroy()
 root.withdraw()
 root.update()
 
+print("\n=== 1c. Không chớp: dựng xong xuôi rồi mới hiện ===")
+# Cửa sổ hiện ra trước khi dựng xong thì người dùng NHÌN THẤY nó tự sửa: loé ở góc
+# (0,0) rồi nhảy về giữa, đổi bề rộng, tô lại màu, thanh tiêu đề sáng->tối.
+# Bài này bắt mọi thao tác dựng cửa sổ và đòi: KHÔNG cái nào chạy khi đã hiện.
+root.deiconify()
+root.update()
+_goc_geo, _goc_dark, _goc_restyle = tk.Toplevel.geometry, m.dark_titlebar, m.restyle_tree
+vi_pham = []
+
+
+def _ghi(win, ten):
+    try:
+        if win.winfo_ismapped():
+            vi_pham.append((ten, win.geometry()))
+    except Exception:
+        pass
+
+
+def _geo(self, *a):
+    if a:
+        _ghi(self, "geometry()")
+    return _goc_geo(self, *a)
+
+
+def _dark(win, remap=False):
+    _ghi(win, "dark_titlebar()")
+    return _goc_dark(win, remap)
+
+
+def _restyle(w):
+    if isinstance(w, tk.Toplevel):
+        _ghi(w, "restyle_tree()")
+    return _goc_restyle(w)
+
+
+tk.Toplevel.geometry, m.dark_titlebar, m.restyle_tree = _geo, _dark, _restyle
+try:
+    for ten, tao in (
+        ("Hành động (right_click)",
+         lambda: m.ActionEditor(root, app, {"type": "right_click", "point": [1, 2]})),
+        ("Hành động (abyss)",
+         lambda: m.ActionEditor(root, app, {"type": "abyss", "frame": [1, 2, 517, 283],
+                                            "conditions": [{"mod": "# to all Attributes"}]})),
+        ("Cài đặt", lambda: m.SettingsDialog(root, app)),
+    ):
+        vi_pham.clear()
+        dlg = tao()
+        root.update()
+        check(f"{ten}: không sửa gì sau khi đã hiện", not vi_pham, vi_pham)
+        check(f"{ten}: hiện ra rồi và giữ được grab",
+              dlg.winfo_ismapped() and str(dlg.grab_current()) == str(dlg),
+              (dlg.winfo_ismapped(), str(dlg.grab_current())))
+        dlg.destroy()
+        root.update()
+finally:
+    tk.Toplevel.geometry, m.dark_titlebar, m.restyle_tree = _goc_geo, _goc_dark, _goc_restyle
+root.withdraw()
+root.update()
+
+print("\n=== 1d. Kích thước 'yêu cầu' trả sai thì cửa sổ vẫn KHÔNG được cắt ===")
+# Lỗi thật đã xảy ra: sau khi cho hộp thoại ẩn lúc dựng, winfo_width() trả 1 nên
+# code phải hỏi winfo_reqwidth() — mà trong BẢN ĐÓNG GÓI giá trị đó có lúc chưa
+# tính xong (đo được 216x239 thay vì 341x395). Ép size sai vào cửa sổ không cho co
+# giãn = nội dung bị cắt vĩnh viễn. Chạy từ mã nguồn thì không tái hiện được, nên
+# ở đây ÉP winfo_req* trả về số bậy để mô phỏng đúng tình huống đó.
+root.deiconify()
+root.geometry("980x780+40+40")
+root.update()
+_rw, _rh = tk.Misc.winfo_reqwidth, tk.Misc.winfo_reqheight
+tk.Misc.winfo_reqwidth = lambda self: 120
+tk.Misc.winfo_reqheight = lambda self: 100
+try:
+    dlgs = [("Cài đặt", m.SettingsDialog(root, app)),
+            ("Hành động (abyss)",
+             m.ActionEditor(root, app, {"type": "abyss", "frame": [1, 2, 517, 283],
+                                        "conditions": [{"mod": "# to all Attributes"}]}))]
+finally:
+    tk.Misc.winfo_reqwidth, tk.Misc.winfo_reqheight = _rw, _rh
+for _ in range(10):
+    root.update()
+    time.sleep(0.02)
+for ten, d in dlgs:
+    w, h, rw, rh = d.winfo_width(), d.winfo_height(), d.winfo_reqwidth(), d.winfo_reqheight()
+    check(f"{ten}: không bị cắt dù kích thước yêu cầu trả sai",
+          w >= rw and h >= rh, f"cửa sổ {w}x{h} < nội dung {rw}x{rh}")
+    d.destroy()
+    root.update()
+root.withdraw()
+root.update()
+
 print("\n=== 2. Mở/đóng hộp thoại không để sót grab ===")
 before = root.grab_current()
 ed = m.ActionEditor(root, app, {"type": "mod_click", "point": [10, 20],
