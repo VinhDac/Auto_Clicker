@@ -9,6 +9,15 @@ REM    Nguyen nhan: kieu 1-file phai tu giai nen ra thu muc tam
 REM    khi chay -> Defender coi la hanh vi dang ngo.
 REM    Da quet kiem chung: onefile bi bat, onedir sach.
 REM
+REM  LUU Y: KHONG con --exclude-module PIL nua. Hanh dong "Abyss" phai chup
+REM    man hinh va OCR (Windows.Media.Ocr) nen can Pillow + bo winrt.
+REM    Cac module winrt phai khai bao --hidden-import vi PyInstaller khong
+REM    tu do ra duoc (chung duoc nap dong).
+REM    Nhung ta chi dung Image/ImageGrab/ImageStat + doc-ghi PNG, nen loai bo
+REM    cac plugin nang khong dung: _avif 7.8MB, _imagingft 2.2MB, webp, cms,
+REM    ImageTk -> tiet kiem ~11MB. PIL bo qua plugin thieu mot cach an toan
+REM    (Image.init() bat ImportError cho tung plugin).
+REM
 REM  Chay tu THU MUC GOC:   tools\build.bat
 REM ============================================================
 cd /d "%~dp0.."
@@ -22,11 +31,20 @@ echo [2/4] Dang build...
 python -m PyInstaller ^
   --onedir --windowed --name AutoClicker --noconfirm --clean ^
   --icon assets\logo.ico ^
-  --exclude-module cv2 --exclude-module numpy --exclude-module mss --exclude-module PIL ^
+  --exclude-module cv2 --exclude-module numpy --exclude-module mss ^
+  --exclude-module PIL.AvifImagePlugin --exclude-module PIL.ImageFont ^
+  --exclude-module PIL.WebPImagePlugin --exclude-module PIL.ImageCms ^
+  --exclude-module PIL.ImageTk ^
   --add-data "data\mods_poe1.txt;." ^
   --add-data "data\mods_poe2.txt;." ^
   --add-data "assets\logo.ico;." ^
   --hidden-import plyer.platforms.win.notification ^
+  --hidden-import winrt.windows.foundation ^
+  --hidden-import winrt.windows.foundation.collections ^
+  --hidden-import winrt.windows.globalization ^
+  --hidden-import winrt.windows.graphics.imaging ^
+  --hidden-import winrt.windows.media.ocr ^
+  --hidden-import winrt.windows.storage.streams ^
   auto_clicker_gui.py
 
 if errorlevel 1 (

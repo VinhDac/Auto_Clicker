@@ -432,6 +432,244 @@ class ReviewOverlay:
         self.on_close()
 
 
+# ---------------- Overlay căn khung panel Abyss ----------------
+class AbyssFrameSelector:
+    """Căn 1 khung duy nhất trùm lên panel "Well of Souls".
+
+    Khung LUÔN giữ đúng tỉ lệ của panel thật, nên chỉ cần kéo cho trùm khít là mọi
+    vùng con (3 dải mod, nút REVEAL/CONFIRM, nút refresh) tự suy ra theo tỉ lệ —
+    người dùng không phải chọn từng điểm.
+
+        kéo giữa   = di chuyển        kéo 4 góc     = phóng to / thu nhỏ
+        mũi tên    = nhích 1px        Shift+mũi tên = 10px
+        + / -      = phóng to/thu nhỏ D             = đọc thử
+        Enter      = lưu              Esc           = huỷ
+
+    "Đọc thử" chụp + OCR ngay tại chỗ để thấy căn chuẩn chưa, khỏi phải chạy thật
+    rồi mới biết sai (và đốt currency oan).
+    """
+    HANDLE = 16          # bán kính vùng bắt 4 góc
+    MIN_W = 120
+
+    def __init__(self, root, frame, callback):
+        self.callback = callback
+        self.result_lines = []
+        self.drag = None          # (mode, mốc...) — mode: "move" hoặc góc 0..3
+        u = ctypes.windll.user32
+        self.vx, self.vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)
+        self.vw, self.vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)
+
+        if frame and len(frame) == 4 and frame[2] > 0 and frame[3] > 0:
+            self.fx, self.fy, self.fw, self.fh = (int(v) for v in frame)
+        else:
+            self.fw = int(self.vw * 0.27)          # panel thật ~27% bề ngang màn hình
+            self.fh = int(self.fw / ABYSS_ASPECT)
+            self.fx = self.vx + (self.vw - self.fw) // 2
+            self.fy = self.vy + (self.vh - self.fh) // 2
+
+        self.win = tk.Toplevel(root)
+        self.win.overrideredirect(True)
+        self.win.geometry(f"{self.vw}x{self.vh}+{self.vx}+{self.vy}")
+        self.win.attributes("-topmost", True)
+        try:
+            # Đậm hơn PointSelector một chút: ở đây phải NHÌN RÕ đường kẻ để căn cho
+            # khớp, không chỉ ngắm 1 điểm. Game phía dưới vẫn thấy đủ để căn.
+            self.win.attributes("-alpha", 0.35)
+        except Exception:
+            pass
+        self.canvas = tk.Canvas(self.win, bg=THEME["bg"], highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+
+        self.canvas.bind("<Button-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._motion)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
+        for key, dx, dy in (("Left", -1, 0), ("Right", 1, 0), ("Up", 0, -1), ("Down", 0, 1)):
+            self.win.bind(f"<{key}>", lambda e, a=dx, b=dy: self._nudge(a, b))
+            self.win.bind(f"<Shift-{key}>", lambda e, a=dx, b=dy: self._nudge(a * 10, b * 10))
+        self.win.bind("<plus>", lambda e: self._scale(1.02))
+        self.win.bind("<equal>", lambda e: self._scale(1.02))
+        self.win.bind("<minus>", lambda e: self._scale(1 / 1.02))
+        self.win.bind("<Prior>", lambda e: self._scale(1.05))
+        self.win.bind("<Next>", lambda e: self._scale(1 / 1.05))
+        self.win.bind("<d>", lambda e: self._test_read())
+        self.win.bind("<D>", lambda e: self._test_read())
+        self.win.bind("<Return>", lambda e: self._finish(True))
+        self.win.bind("<Escape>", lambda e: self._finish(False))
+        self.win.focus_force()
+        try:
+            self.win.update_idletasks()
+            self.win.grab_set()
+        except Exception:
+            pass
+        self._draw()
+
+    # ---- hình học ----
+    def _rect(self):
+        """Khung theo toạ độ CANVAS (đã trừ gốc desktop ảo)."""
+        return (self.fx - self.vx, self.fy - self.vy, self.fw, self.fh)
+
+    def _corners(self):
+        x, y, w, h = self._rect()
+        return [(x, y), (x + w, y), (x, y + h), (x + w, y + h)]
+
+    def _clamp(self):
+        self.fw = max(self.MIN_W, int(self.fw))
+        self.fh = int(self.fw / ABYSS_ASPECT)      # cao luôn suy từ rộng -> giữ tỉ lệ
+
+    def _nudge(self, dx, dy):
+        self.fx += dx
+        self.fy += dy
+        self._draw()
+
+    def _scale(self, k):
+        cx, cy = self.fx + self.fw / 2, self.fy + self.fh / 2
+        self.fw = int(self.fw * k)
+        self._clamp()
+        self.fx, self.fy = int(cx - self.fw / 2), int(cy - self.fh / 2)
+        self._draw()
+
+    # ---- chuột ----
+    def _press(self, e):
+        # 4 góc theo thứ tự: trên-trái, trên-phải, dưới-trái, dưới-phải
+        for i, (cx, cy) in enumerate(self._corners()):
+            if abs(e.x - cx) <= self.HANDLE and abs(e.y - cy) <= self.HANDLE:
+                # Neo = góc ĐỐI DIỆN (đứng yên), khung nở ra theo hướng cố định của
+                # góc đang kéo. Chốt hướng ngay lúc bấm chứ không tính theo vị trí
+                # chuột từng khoảnh khắc — nếu không, kéo qua khỏi neo là khung lật.
+                ax = self.fx + self.fw if i in (0, 2) else self.fx
+                ay = self.fy + self.fh if i in (0, 1) else self.fy
+                sx = -1 if i in (0, 2) else 1
+                sy = -1 if i in (0, 1) else 1
+                self.drag = ("corner", ax, ay, sx, sy)
+                return
+        x, y, w, h = self._rect()
+        if x <= e.x <= x + w and y <= e.y <= y + h:
+            self.drag = ("move", e.x - x, e.y - y)
+
+    def _motion(self, e):
+        if not self.drag:
+            return
+        if self.drag[0] == "move":
+            self.fx = self.vx + e.x - self.drag[1]
+            self.fy = self.vy + e.y - self.drag[2]
+        else:
+            _, ax, ay, sx, sy = self.drag
+            # Bề rộng quyết định, bề cao suy ra -> tỉ lệ không bao giờ méo
+            self.fw = abs(self.vx + e.x - ax)
+            self._clamp()
+            self.fx = ax if sx > 0 else ax - self.fw
+            self.fy = ay if sy > 0 else ay - self.fh
+        self._draw()
+
+    def _release(self, e):
+        self.drag = None
+
+    # ---- vẽ ----
+    def _draw(self):
+        self._clamp()
+        c = self.canvas
+        c.delete("all")
+        AC, OK, TX = THEME["accent"], THEME["ok"], THEME["text"]
+        x, y, w, h = self._rect()
+
+        c.create_text(self.vw // 2, 26, fill=TX, font=("Segoe UI", 14),
+                      text="Kéo giữa = di chuyển  •  kéo 4 góc = phóng to/thu nhỏ  •  "
+                           "mũi tên = 1px, Shift = 10px  •  +/− = zoom")
+        c.create_text(self.vw // 2, 50, fill=THEME["accent"], font=("Segoe UI", 13, "bold"),
+                      text="D = ĐỌC THỬ (xem OCR đọc ra gì)      Enter = lưu      Esc = huỷ")
+
+        c.create_rectangle(x, y, x + w, y + h, outline=AC, width=2)
+        # 3 dải mod: vùng sẽ được chụp + OCR, và tâm dải là điểm click chọn mod
+        for i, (t0, t1) in enumerate(ABYSS_BANDS, 1):
+            by0, by1 = y + h * t0, y + h * t1
+            c.create_rectangle(x + 2, by0, x + w - 2, by1, outline=OK, width=1, dash=(4, 3))
+            c.create_text(x + 10, (by0 + by1) / 2, anchor="w", fill=OK,
+                          font=("Segoe UI", 10, "bold"), text=f"Mod {i}")
+            cx, cy = x + w / 2, (by0 + by1) / 2
+            c.create_line(cx - 7, cy, cx + 7, cy, fill=OK, width=1)
+            c.create_line(cx, cy - 7, cx, cy + 7, fill=OK, width=1)
+        # nút REVEAL/CONFIRM
+        bx, by = x + w * ABYSS_CONFIRM[0], y + h * ABYSS_CONFIRM[1]
+        c.create_oval(bx - 9, by - 9, bx + 9, by + 9, outline=AC, width=2)
+        c.create_text(bx, by - 18, fill=AC, font=("Segoe UI", 10, "bold"), text="REVEAL/CONFIRM")
+        # hộp dò nút refresh
+        rx0, ry0, rx1, ry1 = ABYSS_REFRESH
+        c.create_rectangle(x + w * rx0, y + h * ry0, x + w * rx1, y + h * ry1,
+                           outline=THEME["warn"], width=2)
+        c.create_text(x + w * rx1 + 6, y + h * ry0 - 8, anchor="w", fill=THEME["warn"],
+                      font=("Segoe UI", 10, "bold"), text="↻ refresh")
+        # tay nắm 4 góc
+        for cx, cy in self._corners():
+            c.create_rectangle(cx - 5, cy - 5, cx + 5, cy + 5, fill=AC, outline="")
+
+        c.create_text(x, y - 10, anchor="sw", fill=TX, font=("Consolas", 11),
+                      text=f"{self.fx}, {self.fy}   {self.fw}×{self.fh}")
+        self._draw_results()
+
+    def _draw_results(self):
+        if not self.result_lines:
+            return
+        c = self.canvas
+        y = 90
+        c.create_text(20, y, anchor="nw", fill=THEME["accent"],
+                      font=("Segoe UI", 12, "bold"), text="Đọc thử:")
+        for i, (txt, color) in enumerate(self.result_lines):
+            t = c.create_text(20, y + 24 + i * 22, anchor="nw", fill=color,
+                              font=("Consolas", 11), text=txt)
+            b = c.bbox(t)
+            if b:
+                bg = c.create_rectangle(b[0] - 4, b[1] - 2, b[2] + 4, b[3] + 2,
+                                        fill="#000000", outline="")
+                c.tag_lower(bg, t)
+
+    # ---- đọc thử ----
+    def _test_read(self):
+        reason = core.ocr_unavailable_reason()
+        if reason:
+            self.result_lines = [(f"✖ {reason}", THEME["err"])]
+            self._draw()
+            return
+        # Overlay đang phủ lên game -> phải ẩn đi mới chụp được ảnh thật bên dưới
+        self.win.withdraw()
+        self.win.update()
+        time.sleep(0.15)
+        try:
+            texts, has_refresh, fail = core.abyss_scan((self.fx, self.fy, self.fw, self.fh))
+        finally:
+            self.win.deiconify()
+            self.win.update()
+            self.win.focus_force()
+            try:
+                self.win.grab_set()
+            except Exception:
+                pass
+
+        lines = []
+        for i, t in enumerate(texts or [], 1):
+            if t.strip():
+                lines.append((f"  Mod {i}: {t}", THEME["ok"]))
+            else:
+                lines.append((f"  Mod {i}: (không đọc được)", THEME["err"]))
+        if fail:
+            lines.append((f"  ✖ {fail}", THEME["err"]))
+        else:
+            lines.append((f"  ↻ nút refresh: {'CÓ' if has_refresh else 'không thấy'}",
+                          THEME["warn"]))
+        self.result_lines = lines
+        self._draw()
+
+    def _finish(self, save):
+        try:
+            self.win.grab_release()
+        except Exception:
+            pass
+        try:
+            self.win.destroy()
+        except Exception:
+            pass
+        self.callback([self.fx, self.fy, self.fw, self.fh] if save else None)
+
+
 # ---------------- Hộp thoại chọn template đã lưu ----------------
 class TemplatePicker(tk.Toplevel):
     """Liệt kê template đã lưu theo tên. Kết quả đặt ở self.result:
@@ -557,7 +795,19 @@ class ActionEditor(tk.Toplevel):
         self.hybrid_var = tk.StringVar(value=HYBRID_LABELS[HYBRID_ANY])
         self.hold_var = tk.StringVar(value="shift")
         self.button_var = tk.StringVar(value="Trái")
+        self.minval_var = tk.StringVar()
+        self.rerolls_var = tk.StringVar(value=str(ABYSS_DEFAULT_REROLLS))
+        self.wait_var = tk.StringVar(value=str(ABYSS_DEFAULT_WAIT_MS))
+        self.pick_var = tk.StringVar(value=ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM])
+        self.abyss_frame = None
         self.conditions = copy.deepcopy(action.get("conditions", [])) if action else []
+        if action and action.get("type") == "abyss":
+            fr = action.get("frame")
+            self.abyss_frame = list(fr) if fr else None
+            self.rerolls_var.set(str(action.get("rerolls", ABYSS_DEFAULT_REROLLS)))
+            self.wait_var.set(str(action.get("wait_ms", ABYSS_DEFAULT_WAIT_MS)))
+            self.pick_var.set(ABYSS_PICK_LABELS.get(action.get("pick", ABYSS_PICK_RANDOM),
+                                                    ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM]))
         if action and action.get("type") == "mod_click":
             self.hold_var.set("+".join(parse_hold_keys(action.get("keys"))) or "shift")
             self.button_var.set("Trái" if action.get("button", "left") == "left" else "Phải")
@@ -594,6 +844,8 @@ class ActionEditor(tk.Toplevel):
         t = self.type_var.get()
         if t == "check_mod":
             self._render_check_mod()
+        elif t == "abyss":
+            self._render_abyss()
         elif t in POINT_TYPES:
             ttk.Label(self.body, text="X:").grid(row=0, column=0, sticky="w")
             ttk.Entry(self.body, textvariable=self.x_var, width=8).grid(row=0, column=1)
@@ -691,6 +943,98 @@ class ActionEditor(tk.Toplevel):
         self._refresh_mods()
         self._refresh_conds()
 
+    def _render_abyss(self):
+        ttk.Label(self.body, style="Muted.TLabel",
+                  text="Panel Abyss không Ctrl+C được → app ĐỌC CHỮ bằng ảnh.\n"
+                       "Bấm REVEAL → quét 3 ô → khớp thì chọn ô đó + CONFIRM rồi DỪNG Loop;\n"
+                       "không khớp thì bấm refresh (nếu có) → quét lại → vẫn không thì\n"
+                       "chọn bừa 1 ô + CONFIRM rồi chạy tiếp vòng sau."
+                  ).pack(anchor="w")
+
+        reason = core.ocr_unavailable_reason()
+        if reason:
+            ttk.Label(self.body, text=f"⚠ {reason}", foreground=THEME["err"],
+                      wraplength=470, justify="left").pack(anchor="w", pady=(6, 0))
+
+        fr = ttk.Frame(self.body)
+        fr.pack(fill="x", pady=(8, 0))
+        ttk.Button(fr, text="🖼 Căn khung Abyss", command=self._calibrate).pack(side="left")
+        self.frame_label = ttk.Label(fr, text="", style="Muted.TLabel")
+        self.frame_label.pack(side="left", padx=(8, 0))
+        self._refresh_frame_label()
+
+        r2 = ttk.Frame(self.body)
+        r2.pack(fill="x", pady=(8, 0))
+        ttk.Label(r2, text="Số lần reroll:").pack(side="left")
+        ttk.Entry(r2, textvariable=self.rerolls_var, width=5).pack(side="left", padx=(4, 12))
+        ttk.Label(r2, text="Chờ sau mỗi lần bấm (ms):").pack(side="left")
+        ttk.Entry(r2, textvariable=self.wait_var, width=6).pack(side="left", padx=4)
+
+        r3 = ttk.Frame(self.body)
+        r3.pack(fill="x", pady=(6, 0))
+        ttk.Label(r3, text="Không ra mod thì chọn:").pack(side="left")
+        ttk.OptionMenu(r3, self.pick_var, self.pick_var.get(),
+                       *ABYSS_PICK_LABELS.values()).pack(side="left", padx=(4, 0))
+
+        ttk.Label(self.body, text="Tìm mod:").pack(anchor="w", pady=(10, 0))
+        se = ttk.Entry(self.body, textvariable=self.search_var)
+        se.pack(fill="x")
+        se.bind("<KeyRelease>", self._refresh_mods)
+
+        mfr = ttk.Frame(self.body)
+        mfr.pack(fill="x", pady=(4, 0))
+        msb = ttk.Scrollbar(mfr, orient="vertical")
+        self.master_box = tk.Listbox(mfr, height=5, yscrollcommand=msb.set, exportselection=False)
+        msb.config(command=self.master_box.yview)
+        self.master_box.pack(side="left", fill="both", expand=True)
+        msb.pack(side="right", fill="y")
+        self.master_box.bind("<Double-Button-1>", lambda e: self._add_condition())
+
+        r4 = ttk.Frame(self.body)
+        r4.pack(fill="x", pady=(4, 0))
+        ttk.Label(r4, text="Ngưỡng số tối thiểu (trống = mọi giá trị):").pack(side="left")
+        ttk.Entry(r4, textvariable=self.minval_var, width=7).pack(side="left", padx=4)
+        ttk.Label(self.body, style="Muted.TLabel",
+                  text="Panel Abyss KHÔNG hiện tier — dùng ngưỡng số thay cho tier.\n"
+                       "Mod 2 số (vd \"Adds # to # Chaos damage\") so theo giá trị trung bình."
+                  ).pack(anchor="w", pady=(2, 0))
+        ttk.Button(self.body, text="➕ Thêm điều kiện ↓", command=self._add_condition).pack(
+            anchor="w", pady=(4, 0))
+
+        ttk.Label(self.body, text="Điều kiện — dòng TRÊN ưu tiên trước (kéo-thả để đổi thứ tự):"
+                  ).pack(anchor="w", pady=(10, 2))
+        cfr = ttk.Frame(self.body)
+        cfr.pack(fill="both", expand=True)
+        csb = ttk.Scrollbar(cfr, orient="vertical")
+        self.cond_box = tk.Listbox(cfr, height=4, yscrollcommand=csb.set, exportselection=False)
+        csb.config(command=self.cond_box.yview)
+        self.cond_box.pack(side="left", fill="both", expand=True)
+        csb.pack(side="right", fill="y")
+        self.app._enable_drag_reorder(self.cond_box, lambda: self.conditions, self._refresh_conds)
+
+        r6 = ttk.Frame(self.body)
+        r6.pack(fill="x", pady=(4, 0))
+        ttk.Button(r6, text="🗑 Xoá", command=self._del_condition).pack(side="left")
+        ttk.Button(r6, text="⬆ Lên", command=lambda: self._move_condition(-1)).pack(side="left", padx=4)
+        ttk.Button(r6, text="⬇ Xuống", command=lambda: self._move_condition(1)).pack(side="left")
+
+        self._refresh_mods()
+        self._refresh_conds()
+
+    def _refresh_frame_label(self):
+        if not getattr(self, "frame_label", None):
+            return
+        fr = self.abyss_frame
+        self.frame_label.config(
+            text=(f"({fr[0]}, {fr[1]})  {fr[2]}×{fr[3]}" if fr else "chưa căn khung"))
+
+    def _calibrate(self):
+        def done(fr):
+            self.abyss_frame = list(fr)
+            self._refresh_frame_label()
+
+        self.app.pick_abyss_frame(self.abyss_frame, done, hide=self)
+
     def _refresh_mods(self, *_):
         q = self.search_var.get().strip().lower()
         words = q.split()
@@ -710,6 +1054,20 @@ class ActionEditor(tk.Toplevel):
             messagebox.showinfo("Chọn mod", "Hãy chọn 1 mod trong danh sách trước.", parent=self)
             return
         mod = self.master_box.get(sel[0])
+        if self.type_var.get() == "abyss":
+            mv = self.minval_var.get().strip()
+            cond = {"mod": mod}
+            if mv:
+                try:
+                    val = float(mv.replace(",", "."))
+                except ValueError:
+                    messagebox.showerror("Ngưỡng", "Ngưỡng phải là số (hoặc để trống).",
+                                         parent=self)
+                    return
+                cond["min_value"] = int(val) if val == int(val) else val
+            self.conditions.append(cond)
+            self._refresh_conds()
+            return
         tv = self.tier_var.get().strip()
         tier = None
         if tv:
@@ -726,9 +1084,10 @@ class ActionEditor(tk.Toplevel):
         self._refresh_conds()
 
     def _refresh_conds(self):
+        disp = core.abyss_cond_display if self.type_var.get() == "abyss" else cond_display
         self.cond_box.delete(0, tk.END)
         for i, c in enumerate(self.conditions, 1):
-            self.cond_box.insert(tk.END, f"{i}.  {cond_display(c)}")
+            self.cond_box.insert(tk.END, f"{i}.  {disp(c)}")
 
     def _cond_sel(self):
         s = self.cond_box.curselection()
@@ -770,6 +1129,22 @@ class ActionEditor(tk.Toplevel):
                 except ValueError:
                     point = None
                 a = {"type": t, "point": point, "conditions": [dict(c) for c in self.conditions]}
+            elif t == "abyss":
+                if not self.abyss_frame:
+                    raise ValueError("chưa căn khung Abyss")
+                if not self.conditions:
+                    raise ValueError("chưa thêm điều kiện mod nào")
+                rr = int(self.rerolls_var.get())
+                if not 0 <= rr <= ABYSS_MAX_REROLLS:
+                    raise ValueError(f"số lần reroll phải từ 0 đến {ABYSS_MAX_REROLLS}")
+                wm = int(self.wait_var.get())
+                if wm < 0:
+                    raise ValueError("thời gian chờ không hợp lệ")
+                a = {"type": t,
+                     "frame": [int(v) for v in self.abyss_frame],
+                     "conditions": [dict(c) for c in self.conditions],
+                     "rerolls": rr, "wait_ms": wm,
+                     "pick": ABYSS_PICK_FROM_LABEL.get(self.pick_var.get(), ABYSS_PICK_RANDOM)}
             elif t == "mod_click":
                 keys = parse_hold_keys(self.hold_var.get())
                 if not keys:
@@ -1640,11 +2015,51 @@ class AutoClickerApp:
 
         PointSelector(self.root, on_pick)
 
+    def pick_abyss_frame(self, frame, callback, hide=None):
+        """Mở overlay căn khung Abyss (giống pick_point nhưng chọn cả 1 vùng)."""
+        self.status.set("Căn khung Abyss: kéo cho trùm panel, D để đọc thử, Enter để lưu.")
+        if hide:
+            try:
+                hide.grab_release()
+            except Exception:
+                pass
+            hide.withdraw()
+        self.root.withdraw()
+
+        def on_done(fr):
+            self.root.deiconify()
+            if hide:
+                hide.deiconify()
+                try:
+                    hide.grab_set()
+                except Exception:
+                    pass
+            if fr:
+                self.status.set(f"Đã căn khung Abyss: ({fr[0]}, {fr[1]}) {fr[2]}×{fr[3]}.")
+                callback(fr)
+            else:
+                self.status.set("Đã huỷ căn khung.")
+
+        AbyssFrameSelector(self.root, frame, on_done)
+
     # ---- xem lại điểm đã chọn (toàn bộ Process) ----
     def review_points(self):
         pts = []
 
         def add(a, label):
+            if a.get("type") == "abyss":
+                # Abyss không có 1 điểm mà cả 1 khung -> hiện mọi điểm suy ra từ khung
+                fr = a.get("frame")
+                if not fr:
+                    return
+                r = core.abyss_regions(fr)
+                for i, p in enumerate(r["band_points"], 1):
+                    pts.append((p[0], p[1], f"{label} · mod {i}", THEME["ok"]))
+                cf = r["confirm"]
+                pts.append((cf[0], cf[1], f"{label} · CONFIRM", THEME["accent"]))
+                rp = r["refresh_point"]
+                pts.append((rp[0], rp[1], f"{label} · ↻", THEME["warn"]))
+                return
             pt = a.get("point")
             if not pt:
                 return
