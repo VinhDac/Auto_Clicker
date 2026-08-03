@@ -129,7 +129,7 @@ def save_settings(s):
 
 # ---------------- Template: 2 loại (Process và Action_Loop) ----------------
 # Lưu cạnh exe:  templates/process/*.json   và   templates/loop/*.json
-TEMPLATE_KINDS = {"process": "Process", "loop": "Action_Loop"}
+TEMPLATE_KINDS = {"process": "Process", "loop": "Action_Loop", "group": "Nhóm HĐ 1 lần"}
 _BAD_FILENAME_CHARS = '\\/:*?"<>|'
 
 
@@ -209,6 +209,37 @@ def normalize_loop_template(data):
             "loop_start_index": int(lp.get("loop_start_index") or 0),
             "max_loops": int(lp.get("max_loops") or DEFAULT_MAX_LOOPS),
             "hold_keys": lp.get("hold_keys") or "",
+        }
+    return None
+
+
+def make_group_template(step, game):
+    """Đóng gói 1 bước Nhóm HĐ 1 lần thành template loại "group"."""
+    return {
+        "schema": 3,
+        "type": "group",
+        "name": step.get("name") or "Nhóm",
+        "game": game,
+        "group": {
+            "kind": "group",
+            "name": step.get("name") or "Nhóm",
+            "actions": step.get("actions") or [],
+        },
+    }
+
+
+def normalize_group_template(data):
+    """Đọc 1 file template Nhóm -> 1 bước group. Trả None nếu file không phải loại
+    group (vd lỡ chọn file Loop hoặc Process) — để bên gọi báo lỗi rõ ràng thay vì
+    nhận về một bước méo mó."""
+    if not isinstance(data, dict):
+        return None
+    if data.get("type") == "group" and isinstance(data.get("group"), dict):
+        gr = data["group"]
+        return {
+            "kind": "group",
+            "name": gr.get("name") or data.get("name") or "Nhóm",
+            "actions": gr.get("actions") or [],
         }
     return None
 
@@ -419,6 +450,14 @@ def make_loop_step(name="Loop mới"):
             "hold_keys": ""}
 
 
+def make_group_step(name="Nhóm mới"):
+    """Nhóm HĐ 1 lần: nhiều hành động, chạy đúng 1 lượt, KHÔNG lặp.
+
+    Cố tình không có max_loops / loop_start_index / hold_keys — nhóm không lặp
+    nên mấy thứ đó vô nghĩa, có mặt chỉ tổ gây hiểu nhầm."""
+    return {"kind": "group", "name": name, "actions": []}
+
+
 def make_action_step(action):
     st = dict(action)
     st["kind"] = "action"
@@ -426,13 +465,25 @@ def make_action_step(action):
 
 
 def is_loop_step(step):
+    """Bước LẶP (Action_Loop). Nhóm HĐ 1 lần KHÔNG tính là loop."""
     return step.get("kind") == "loop"
+
+
+def is_group_step(step):
+    return step.get("kind") == "group"
+
+
+def has_actions(step):
+    """Bước có chứa DANH SÁCH hành động không? (Loop và Nhóm thì có, HĐ lẻ thì không)"""
+    return is_loop_step(step) or is_group_step(step)
 
 
 def step_title(step):
     """Tên ngắn của 1 bước (dùng trong thông báo lỗi)."""
     if is_loop_step(step):
         return step.get("name") or "Loop"
+    if is_group_step(step):
+        return step.get("name") or "Nhóm"
     return (step.get("name") or "").strip() or ACTION_LABELS.get(step.get("type"), "Hành động")
 
 
@@ -446,6 +497,9 @@ def step_display(step):
         hold_txt = f"  ·  ⇧ giữ {'+'.join(hold)}" if hold else ""
         return (f"🔁 {step.get('name') or 'Loop'}   ·  {n} hành động  ·  "
                 f"tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng  ·  {goal}{hold_txt}")
+    if is_group_step(step):
+        n = len(step.get("actions") or [])
+        return f"▤ {step.get('name') or 'Nhóm'}   ·  {n} hành động  ·  chạy 1 lần"
     return f"⚡ {action_display(step)}   (chạy 1 lần)"
 
 
@@ -474,6 +528,12 @@ def normalize_process(data):
                     "loop_start_index": int(st.get("loop_start_index") or 0),
                     "max_loops": int(st.get("max_loops") or DEFAULT_MAX_LOOPS),
                     "hold_keys": st.get("hold_keys") or "",
+                })
+            elif st.get("kind") == "group":
+                steps.append({
+                    "kind": "group",
+                    "name": st.get("name") or "Nhóm",
+                    "actions": st.get("actions") or [],
                 })
             elif st.get("type"):
                 steps.append(make_action_step(st))
@@ -562,12 +622,90 @@ def abyss_problems(a, screen=None):
         if fh * ABYSS_BANDS[0][1] < 30:
             add("warning", f"\"Abyss\": khung hơi nhỏ ({fw}×{fh}) — chữ có thể quá nhỏ để "
                            f"đọc chính xác. Căn lại cho trùm đúng panel.")
-    if not (a.get("conditions") or []):
+    conds = a.get("conditions") or []
+    if not conds:
         add("error", "\"Abyss\" chưa có điều kiện mod nào.")
+    # Cùng 1 mod ở cả 2 bảng là mâu thuẫn -> Điều kiện thắng, nhưng phải nói ra,
+    # không thì người dùng tưởng mình đã cấm được nó.
+    cam = {norm(e.get("mod", "")) for e in (a.get("excludes") or []) if e.get("mod")}
+    trung = [c.get("mod") for c in conds if norm(c.get("mod", "")) in cam]
+    if trung:
+        add("warning", f"\"Abyss\": mod nằm ở CẢ điều kiện lẫn loại trừ "
+                       f"({', '.join(trung)}) — Điều kiện thắng, dòng loại trừ vô tác dụng.")
     reason = ocr_unavailable_reason()
     if reason:
         add("error", f"\"Abyss\" không dùng được: {reason}")
     return out
+
+
+def validate_actions(actions, screen=None):
+    """Soát TỪNG hành động, không quan tâm nó nằm trong Loop hay trong Nhóm.
+    Dùng chung cho validate_flow (Loop) và validate_group (Nhóm)."""
+    problems = []
+
+    def err(msg, idx=None):
+        problems.append({"severity": "error", "message": msg, "index": idx})
+
+    def warn(msg, idx=None):
+        problems.append({"severity": "warning", "message": msg, "index": idx})
+
+    for i, a in enumerate(actions):
+        t = a.get("type")
+        if t not in ACTION_TYPES:
+            # Template lưu từ bản cũ có thể còn "move"/"double_click"/"scroll".
+            # do_action() sẽ lặng lẽ không làm gì -> phải báo, không để chạy mù.
+            err(f"Loại hành động \"{t}\" không còn được hỗ trợ — xoá dòng này "
+                f"hoặc thay bằng loại khác.", i)
+            continue
+        if t == "check_mod":
+            if not a.get("point"):
+                err("\"Kiểm tra mod\" chưa chọn điểm rê chuột vào item.", i)
+            if not (a.get("conditions") or []):
+                err("\"Kiểm tra mod\" chưa có điều kiện mod nào.", i)
+        elif t == "abyss":
+            for p in abyss_problems(a, screen):
+                problems.append({"severity": p["severity"], "message": p["message"], "index": i})
+        elif t == "mod_click":
+            keys = parse_hold_keys(a.get("keys"))
+            if not keys:
+                err("\"Giữ phím + click\" chưa chọn phím nào.", i)
+            else:
+                bad = [k for k in keys if not is_valid_key(k)]
+                if bad:
+                    err(f"\"Giữ phím + click\": phím không hợp lệ: {', '.join(bad)}. "
+                        f"Dùng tên như shift, ctrl, alt.", i)
+            if not a.get("point"):
+                err("\"Giữ phím + click\" chưa chọn điểm click.", i)
+        elif t == "key_press" and not is_valid_key(str(a.get("key", "")).strip().lower()):
+            err(f"\"Nhấn phím\": phím không hợp lệ: {a.get('key', '')}", i)
+        point = a.get("point")
+        if point and screen:
+            sx, sy, sw, sh = screen
+            if not (sx <= point[0] < sx + sw and sy <= point[1] < sy + sh):
+                warn(f"Điểm ({point[0]}, {point[1]}) nằm NGOÀI màn hình hiện tại "
+                     f"— có thể toạ độ lưu từ độ phân giải khác.", i)
+    return problems
+
+
+def validate_group(actions, has_clip=None, screen=None):
+    """Soát 1 Nhóm HĐ 1 lần. KHÔNG kiểm số vòng lặp, KHÔNG kiểm điểm bắt đầu Loop,
+    và KHÔNG cảnh báo "chưa có mục tiêu" — nhóm không lặp nên chẳng có gì để dừng."""
+    if has_clip is None:
+        has_clip = HAS_CLIP
+    if screen is None:
+        screen = virtual_screen_rect()
+
+    problems = []
+    if not actions:
+        problems.append({"severity": "warning", "index": None,
+                         "message": "Nhóm chưa có hành động nào — bước này sẽ không làm gì."})
+        return problems
+    if not has_clip and any(a.get("type") == "check_mod" for a in actions):
+        problems.append({"severity": "error", "index": None,
+                         "message": "Thiếu thư viện pyperclip → không đọc được chữ item. "
+                                    "Cài: pip install pyperclip"})
+    problems.extend(validate_actions(actions, screen))
+    return problems
 
 
 def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=None):
@@ -611,41 +749,7 @@ def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=No
             warn(f"\"{ACTION_LABELS.get(actions[i].get('type'), '')}\" nằm ở phần chỉ chạy "
                  f"1 lần → chỉ kiểm tra được đúng 1 lần lúc đầu, không kiểm tra mỗi vòng.", i)
 
-    for i, a in enumerate(actions):
-        t = a.get("type")
-        if t not in ACTION_TYPES:
-            # Template lưu từ bản cũ có thể còn "move"/"double_click"/"scroll".
-            # do_action() sẽ lặng lẽ không làm gì -> phải báo, không để chạy mù.
-            err(f"Loại hành động \"{t}\" không còn được hỗ trợ — xoá dòng này "
-                f"hoặc thay bằng loại khác.", i)
-            continue
-        if t == "check_mod":
-            if not a.get("point"):
-                err("\"Kiểm tra mod\" chưa chọn điểm rê chuột vào item.", i)
-            if not (a.get("conditions") or []):
-                err("\"Kiểm tra mod\" chưa có điều kiện mod nào.", i)
-        elif t == "abyss":
-            for p in abyss_problems(a, screen):
-                problems.append({"severity": p["severity"], "message": p["message"], "index": i})
-        elif t == "mod_click":
-            keys = parse_hold_keys(a.get("keys"))
-            if not keys:
-                err("\"Giữ phím + click\" chưa chọn phím nào.", i)
-            else:
-                bad = [k for k in keys if not is_valid_key(k)]
-                if bad:
-                    err(f"\"Giữ phím + click\": phím không hợp lệ: {', '.join(bad)}. "
-                        f"Dùng tên như shift, ctrl, alt.", i)
-            if not a.get("point"):
-                err("\"Giữ phím + click\" chưa chọn điểm click.", i)
-        elif t == "key_press" and not is_valid_key(str(a.get("key", "")).strip().lower()):
-            err(f"\"Nhấn phím\": phím không hợp lệ: {a.get('key', '')}", i)
-        point = a.get("point")
-        if point and screen:
-            sx, sy, sw, sh = screen
-            if not (sx <= point[0] < sx + sw and sy <= point[1] < sy + sh):
-                warn(f"Điểm ({point[0]}, {point[1]}) nằm NGOÀI màn hình hiện tại "
-                     f"— có thể toạ độ lưu từ độ phân giải khác.", i)
+    problems.extend(validate_actions(actions, screen))
 
     try:
         ml = int(max_loops)
@@ -679,6 +783,10 @@ def validate_process(steps, has_clip=None, screen=None):
             for p in validate_flow(st.get("actions") or [],
                                    int(st.get("loop_start_index") or 0),
                                    st.get("max_loops", 0), has_clip, screen):
+                problems.append({"severity": p["severity"], "step": si, "index": p.get("index"),
+                                 "message": f"{label}: {p['message']}"})
+        elif is_group_step(st):
+            for p in validate_group(st.get("actions") or [], has_clip, screen):
                 problems.append({"severity": p["severity"], "step": si, "index": p.get("index"),
                                  "message": f"{label}: {p['message']}"})
         else:
@@ -883,6 +991,10 @@ def do_action(a, stop_flag, pre_click_ms=0):
 CHECK_MATCH = "match"        # đọc được chữ item VÀ khớp điều kiện
 CHECK_NO_MATCH = "no_match"  # đọc được chữ item nhưng chưa khớp -> chạy tiếp là đúng
 CHECK_READ_FAIL = "read_fail"  # KHÔNG đọc được chữ item -> có gì đó sai, phải báo
+# DỪNG NGAY với lý do rõ ràng, không đếm đủ 3 lần như read_fail. Dùng khi chạy tiếp
+# là làm bậy — vd cả 3 ô Abyss đều nằm trong danh sách loại trừ: panel đang mở dở,
+# vòng sau bấm "REVEAL" sẽ trúng nút CONFIRM và chốt đúng cái mod bị cấm.
+CHECK_STOP = "stop"
 
 # Đọc lỗi liên tiếp bao nhiêu lần thì tự dừng (tránh đốt currency khi game mất focus).
 MAX_READ_FAIL_STREAK = 3
@@ -1245,6 +1357,30 @@ def abyss_scan(frame, log=None):
     return texts, has_refresh, None
 
 
+def abyss_is_excluded(text, excludes):
+    """Dòng chữ này có nằm trong danh sách loại trừ không?
+
+    Loại trừ chỉ so THEO MOD, không có ngưỡng số — "cấm mod này" chứ không phải
+    "cấm khi dưới 20"."""
+    if not text or not excludes:
+        return False
+    n = norm(text)
+    return any(n == norm(e.get("mod", "")) for e in excludes if e.get("mod"))
+
+
+def abyss_pick_allowed(texts, excludes):
+    """Các ô ĐƯỢC PHÉP chọn khi phải chọn bừa, xếp theo thứ tự ưu tiên:
+
+    1. đọc được chữ VÀ không bị cấm      <- an toàn, ưu tiên
+    2. không đọc được nhưng không bị cấm <- đánh liều, chỉ dùng khi hết cách
+    Ô bị cấm thì không bao giờ vào danh sách. Rỗng = không được chọn ô nào.
+    """
+    doc_duoc = [i for i, t in enumerate(texts) if t.strip()]
+    khong_cam = [i for i, t in enumerate(texts) if not abyss_is_excluded(t, excludes)]
+    an_toan = [i for i in doc_duoc if i in khong_cam]
+    return an_toan or khong_cam
+
+
 def abyss_find_match(texts, conds):
     """Tìm ô khớp điều kiện. Điều kiện xét theo thứ tự ưu tiên TRÊN->DƯỚI.
     Trả về (chỉ_số_ô, điều_kiện, giá_trị) hoặc (None, None, None)."""
@@ -1261,12 +1397,14 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
 
         bấm REVEAL -> quét -> khớp thì chọn ô đó + CONFIRM rồi DỪNG
                    -> không khớp thì bấm refresh (nếu có nút) -> quét lại
-                   -> vẫn không khớp thì chọn bừa 1 ô + CONFIRM, chạy tiếp vòng sau
+                   -> vẫn không khớp thì chọn bừa 1 ô KHÔNG BỊ LOẠI TRỪ + CONFIRM
+                   -> nếu cả 3 ô đều bị loại trừ và hết reroll -> DỪNG, báo rõ
 
     Trả về (status, payload) giống check_mod_action:
         (CHECK_MATCH, cond)      — đã ra mod mong muốn và đã chốt xong
         (CHECK_NO_MATCH, None)   — không ra mod, đã chọn bừa và confirm
         (CHECK_READ_FAIL, lý_do) — không đọc được panel
+        (CHECK_STOP, lý_do)      — không có ô nào được phép chọn, phải dừng ngay
     """
     reason = ocr_unavailable_reason()
     if reason:
@@ -1277,6 +1415,7 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
     conds = a.get("conditions") or []
     if not conds:
         return CHECK_READ_FAIL, "hành động Abyss chưa có điều kiện nào"
+    excludes = a.get("excludes") or []
 
     regions = abyss_regions(frame)
     # KHÔNG dùng `a.get(...) or MẶC_ĐỊNH`: số 0 là giá trị hợp lệ (không chờ) nhưng
@@ -1311,6 +1450,7 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
         if stop_flag.is_set():
             return CHECK_NO_MATCH, None
 
+        texts = [""] * len(ABYSS_BANDS)
         for attempt in range(rerolls + 1):
             texts, has_refresh, fail = abyss_scan(frame, log=log)
             if fail:
@@ -1337,10 +1477,19 @@ def abyss_action(a, stop_flag, pre_click_ms=0, log=None):
             if stop_flag.is_set():
                 return CHECK_NO_MATCH, None
 
-        # 2. Hết cách -> chọn bừa rồi CONFIRM để đi tiếp
+        # 2. Hết cách -> chọn bừa, nhưng KHÔNG được đụng ô bị loại trừ
         if stop_flag.is_set():
             return CHECK_NO_MATCH, None
-        pick = 0 if pick_mode == ABYSS_PICK_FIRST else random.randrange(len(ABYSS_BANDS))
+        if log and excludes:
+            for i, t in enumerate(texts):
+                if abyss_is_excluded(t, excludes):
+                    log(f"   ⛔ ô {i + 1} ({t}) nằm trong danh sách loại trừ → bỏ qua", "skip")
+        allowed = abyss_pick_allowed(texts, excludes)
+        if not allowed:
+            return CHECK_STOP, ("cả 3 ô đều nằm trong danh sách loại trừ và đã hết lượt "
+                                "reroll — dừng để không chốt phải mod bạn đã cấm. "
+                                "Panel Abyss đang mở, hãy tự chọn rồi chạy lại.")
+        pick = allowed[0] if pick_mode == ABYSS_PICK_FIRST else random.choice(allowed)
         if log:
             log(f"   ⏭ không ra mod mong muốn → chọn ô {pick + 1} rồi CONFIRM", "skip")
         choose(pick)
@@ -1388,6 +1537,9 @@ class ProcessRunner:
         self._on_log = on_log or (lambda msg, tag=None: None)
         self.hotkey_label = str(cfg.get("stop_hotkey", "f6")).upper()
         self.held = HeldKeys()
+        # Lý do phải DỪNG NGAY (CHECK_STOP). Giữ riêng để thông báo cuối cùng nói
+        # đúng chuyện gì xảy ra, thay vì rơi vào nhánh chung "Đã dừng".
+        self.fatal = None
 
     def release_held_keys(self):
         """Thả mọi phím đang giữ. Bên gọi nên gọi lại lần nữa cho chắc."""
@@ -1401,13 +1553,20 @@ class ProcessRunner:
         self._on_log(msg, tag)
 
     # -- chạy 1 danh sách hành động --
-    def run_sequence(self, actions, pre_click_ms, hover_ms, copy_keys):
+    def run_sequence(self, actions, pre_click_ms, hover_ms, copy_keys, stop_on_hit=True):
         """Trả về (hit, read_fail_reason).
-        hit = điều kiện đã khớp -> DỪNG NGAY, không chạy nốt phần còn lại.
-        read_fail_reason = KHÔNG đọc được chữ item (khác hẳn "đọc được nhưng chưa ra mod")."""
+        hit = điều kiện đã khớp.
+        read_fail_reason = KHÔNG đọc được chữ item (khác hẳn "đọc được nhưng chưa ra mod").
+
+        stop_on_hit=True  (Loop): khớp là DỪNG NGAY, bỏ phần còn lại của vòng —
+                          đúng, vì vòng đó đã đạt mục tiêu rồi.
+        stop_on_hit=False (Nhóm HĐ 1 lần): vẫn chạy hết các hành động còn lại.
+                          Nhóm không có vòng nào để kết thúc, nên cắt ngang giữa
+                          chừng chỉ làm người dùng mất mấy thao tác mà không hiểu vì sao."""
+        hit_payload = None
         for a in actions:
             if self.stop_flag.is_set():
-                return None, None
+                return hit_payload, None
             if a["type"] in GOAL_TYPES:
                 if a["type"] == "abyss":
                     status, payload = abyss_action(a, self.stop_flag, pre_click_ms,
@@ -1416,7 +1575,15 @@ class ProcessRunner:
                     status, payload = check_mod_action(a, self.stop_flag, hover_ms,
                                                        copy_keys, log=self._log)
                 if status == CHECK_MATCH:
-                    return payload, None
+                    if stop_on_hit:
+                        return payload, None
+                    hit_payload = hit_payload or payload
+                if status == CHECK_STOP:
+                    # Chạy tiếp là làm bậy -> chặn ngay, không đếm đủ 3 lần.
+                    self.fatal = payload
+                    self.stop_flag.set()
+                    self._log(f"   ⛔ {payload}", "err")
+                    return None, None
                 if status == CHECK_READ_FAIL:
                     return None, payload
             else:
@@ -1433,7 +1600,7 @@ class ProcessRunner:
                     return None, (f"hành động #{actions.index(a) + 1} "
                                   f"({ACTION_LABELS.get(a.get('type'), a.get('type'))}) "
                                   f"lỗi: {type(e).__name__}: {e}")
-        return None, None
+        return hit_payload, None
 
     # -- chạy 1 bước Action_Loop --
     def run_loop_step(self, step, si, total_steps, pre_click_ms, hover_ms, copy_keys):
@@ -1542,15 +1709,32 @@ class ProcessRunner:
             name = step_title(step)
 
             if not is_loop_step(step):
-                # Hành động lẻ giữa các Loop -> chạy đúng 1 lần
-                self._status(f"[{si + 1}/{total}] {name} (hành động lẻ)")
-                self._log(f"⚡ [{si + 1}/{total}] {name} — hành động lẻ, chạy 1 lần")
-                hit, fail = self.run_sequence([step], pre_click_ms, hover_ms, copy_keys)
+                # Nhóm HĐ 1 lần và hành động lẻ: chạy đúng 1 lượt, không lặp.
+                if is_group_step(step):
+                    seq = step.get("actions") or []
+                    self._status(f"[{si + 1}/{total}] {name} (nhóm 1 lần, {len(seq)} hành động)")
+                    self._log(f"▤ [{si + 1}/{total}] {name} — nhóm HĐ 1 lần, "
+                              f"{len(seq)} hành động")
+                else:
+                    seq = [step]
+                    self._status(f"[{si + 1}/{total}] {name} (hành động lẻ)")
+                    self._log(f"⚡ [{si + 1}/{total}] {name} — hành động lẻ, chạy 1 lần")
+                hit, fail = self.run_sequence(seq, pre_click_ms, hover_ms, copy_keys,
+                                              stop_on_hit=False)
+                if self.fatal:
+                    status = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
+                    self._log(status, "err")
+                    break
                 if fail:
                     status = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
                               f"({fail}). Kiểm tra: game còn focus? Điểm rê chuột còn đúng?")
                     self._log(status, "err")
                     break
+                if hit:
+                    # Bước 1 lượt không có vòng nào để kết thúc -> chỉ ghi nhận rồi đi tiếp.
+                    achieved.append((name, goal_display(hit)))
+                    self._log(f"   ✅ {name}: khớp {goal_display(hit)} "
+                              f"(bước 1 lượt nên vẫn chạy tiếp)", "ok")
                 continue
 
             self._status(f"[{si + 1}/{total}] {name}: bắt đầu...")
@@ -1583,6 +1767,10 @@ class ProcessRunner:
                           f"{MAX_READ_FAIL_STREAK} lần liên tiếp ({detail}). Kiểm tra: cửa sổ game "
                           f"còn đang focus? Điểm rê chuột còn đúng vị trí item? "
                           f"Đã dừng để không phí currency.")
+                self._log(status, "err")
+                break
+            if self.fatal:
+                status = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
                 self._log(status, "err")
                 break
             status = "Đã dừng"

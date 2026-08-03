@@ -19,11 +19,13 @@ AN_TOAN = [
     ("test_abyss_ocr.py", "Abyss: OCR + dò nút refresh trên ảnh mẫu thật"),
     ("test_abyss_luong_chay.py", "Abyss: luồng reveal/reroll/confirm, thứ tự click"),
     ("test_abyss_giao_dien.py", "Abyss: hộp thoại, căn khung, lưu/mở template"),
+    ("test_abyss_loai_tru.py", "Abyss: danh sách loại trừ, cấm hết thì dừng"),
     ("test_giu_shift.py", "Giữ Shift suốt Loop + gia cố mod_click"),
     ("test_hop_thoai_hanh_dong.py", "Hộp thoại hành động: không widget nào chiếm grab"),
     ("test_them_hanh_dong.py", "Thêm/sửa/xoá/copy hành động qua nhiều Loop"),
     ("test_chon_buoc_chuot.py", "Chọn bước & kéo-thả bằng chuột (sự kiện giả)"),
     ("test_phim_tat.py", "Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả"),
+    ("test_nhom_hd.py", "Nhóm HĐ 1 lần: khung dùng chung, chạy 1 lượt, template"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
 ]
 

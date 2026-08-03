@@ -23,11 +23,13 @@ Mã thoát 0 = tất cả đạt. Từng bài cũng chạy riêng được:
 | `test_abyss_ocr.py` | OCR 3 ô mod + dò nút refresh, chạy trên 2 ảnh mẫu thật ở thư mục gốc |
 | `test_abyss_luong_chay.py` | Luồng reveal → quét → reroll → confirm, đúng thứ tự click, đọc lỗi thì không chọn bừa |
 | `test_abyss_giao_dien.py` | Hộp thoại Abyss, overlay căn khung, lưu/mở template |
+| `test_abyss_loai_tru.py` | Danh sách loại trừ: không chốt mod bị cấm, cả 3 ô bị cấm thì reroll rồi dừng |
 | `test_giu_shift.py` | Tick "Giữ Shift suốt Loop" + gia cố `mod_click` |
 | `test_hop_thoai_hanh_dong.py` | Hộp thoại hành động không được chứa widget chiếm grab toàn cục |
 | `test_them_hanh_dong.py` | Thêm/sửa/xoá/copy hành động qua nhiều Loop, setup dài 40 hành động, lưu & mở lại |
 | `test_chon_buoc_chuot.py` | Chọn bước và kéo-thả bằng sự kiện chuột |
 | `test_phim_tat.py` | Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả, dán rác không vỡ |
+| `test_nhom_hd.py` | Nhóm HĐ 1 lần: khung dùng chung với Loop, 3 điều khiển bị khoá, chạy 1 lượt, template riêng |
 | `test_hoi_quy.py` | Các tính năng cũ không bị vỡ |
 | `test_modclick_chuot_that.py` | Chạy thật bằng chuột thật — **chỉ chạy với `--full`** |
 

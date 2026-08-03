@@ -32,7 +32,9 @@ from core import *                                    # noqa: F401,F403  (hằng
 from core import (app_dir, load_settings, save_settings, load_mods, fetch_mod_texts,
                   templates_dir, safe_filename, list_templates, template_path,
                   write_json, read_json, make_loop_template, normalize_loop_template,
-                  normalize_process, make_loop_step, make_action_step, is_loop_step,
+                  normalize_process, make_loop_step, make_action_step, make_group_step,
+                  is_loop_step, is_group_step, has_actions, make_group_template,
+                  normalize_group_template,
                   step_title, step_display, validate_process, action_display,
                   cond_display, parse_hold_keys, ProcessRunner)
 
@@ -801,7 +803,9 @@ class ActionEditor(tk.Toplevel):
         self.wait_var = tk.StringVar(value=str(ABYSS_DEFAULT_WAIT_MS))
         self.pick_var = tk.StringVar(value=ABYSS_PICK_LABELS[ABYSS_PICK_RANDOM])
         self.abyss_frame = None
+        self.excl_box = None
         self.conditions = copy.deepcopy(action.get("conditions", [])) if action else []
+        self.excludes = copy.deepcopy(action.get("excludes", [])) if action else []
         if action and action.get("type") == "abyss":
             fr = action.get("frame")
             self.abyss_frame = list(fr) if fr else None
@@ -836,7 +840,10 @@ class ActionEditor(tk.Toplevel):
         # chỉ vẽ lại nội dung chứ cửa sổ không tự phóng lại.
         restyle_tree(self)
         set_window_icon(self)
-        center_window(self, 520, 720)
+        # Cao đủ cho loại NHIỀU nội dung nhất (Abyss: 2 bảng + danh sách mod).
+        # Cố định cho mọi loại vì đổi Loại chỉ vẽ lại phần ruột, cửa sổ không tự
+        # phóng theo — để nhỏ là bị cắt chữ.
+        center_window(self, 520, 880)
         dark_titlebar(self)
 
     def _render(self):
@@ -954,8 +961,8 @@ class ActionEditor(tk.Toplevel):
         ttk.Label(self.body, style="Muted.TLabel",
                   text="Panel Abyss không Ctrl+C được → app ĐỌC CHỮ bằng ảnh.\n"
                        "Bấm REVEAL → quét 3 ô → khớp thì chọn ô đó + CONFIRM rồi DỪNG Loop;\n"
-                       "không khớp thì bấm refresh (nếu có) → quét lại → vẫn không thì\n"
-                       "chọn bừa 1 ô + CONFIRM rồi chạy tiếp vòng sau."
+                       "không khớp thì bấm refresh (nếu có) → quét lại → vẫn không thì chọn\n"
+                       "bừa 1 ô KHÔNG bị loại trừ + CONFIRM rồi chạy tiếp vòng sau."
                   ).pack(anchor="w")
 
         reason = core.ocr_unavailable_reason()
@@ -1005,8 +1012,12 @@ class ActionEditor(tk.Toplevel):
                   text="Panel Abyss KHÔNG hiện tier — dùng ngưỡng số thay cho tier.\n"
                        "Mod 2 số (vd \"Adds # to # Chaos damage\") so theo giá trị trung bình."
                   ).pack(anchor="w", pady=(2, 0))
-        ttk.Button(self.body, text="➕ Thêm điều kiện ↓", command=self._add_condition).pack(
-            anchor="w", pady=(4, 0))
+
+        r5 = ttk.Frame(self.body)
+        r5.pack(fill="x", pady=(4, 0))
+        ttk.Button(r5, text="➕ Thêm điều kiện ↓", command=self._add_condition).pack(side="left")
+        ttk.Button(r5, text="⛔ Thêm vào loại trừ ↓", command=self._add_exclude).pack(
+            side="left", padx=(8, 0))
 
         ttk.Label(self.body, text="Điều kiện — dòng TRÊN ưu tiên trước (kéo-thả để đổi thứ tự):"
                   ).pack(anchor="w", pady=(10, 2))
@@ -1017,6 +1028,7 @@ class ActionEditor(tk.Toplevel):
         csb.config(command=self.cond_box.yview)
         self.cond_box.pack(side="left", fill="both", expand=True)
         csb.pack(side="right", fill="y")
+        self.cond_box.bind("<Delete>", lambda e: (self._del_condition(), "break")[1])
         self.app._enable_drag_reorder(self.cond_box, lambda: self.conditions, self._refresh_conds)
 
         r6 = ttk.Frame(self.body)
@@ -1025,8 +1037,29 @@ class ActionEditor(tk.Toplevel):
         ttk.Button(r6, text="⬆ Lên", command=lambda: self._move_condition(-1)).pack(side="left", padx=4)
         ttk.Button(r6, text="⬇ Xuống", command=lambda: self._move_condition(1)).pack(side="left")
 
+        # Bảng loại trừ: KHÔNG có Lên/Xuống vì thứ tự vô nghĩa — nó là một tập hợp
+        # "cấm chốt", không phải danh sách ưu tiên.
+        ttk.Label(self.body, text="⛔ Loại trừ — không bao giờ chốt mấy mod này, "
+                                  "kể cả lúc phải chọn bừa:").pack(anchor="w", pady=(10, 2))
+        efr = ttk.Frame(self.body)
+        efr.pack(fill="both", expand=True)
+        esb = ttk.Scrollbar(efr, orient="vertical")
+        self.excl_box = tk.Listbox(efr, height=4, yscrollcommand=esb.set, exportselection=False)
+        esb.config(command=self.excl_box.yview)
+        self.excl_box.pack(side="left", fill="both", expand=True)
+        esb.pack(side="right", fill="y")
+        self.excl_box.bind("<Delete>", lambda e: (self._del_exclude(), "break")[1])
+
+        r7 = ttk.Frame(self.body)
+        r7.pack(fill="x", pady=(4, 0))
+        ttk.Button(r7, text="🗑 Xoá", command=self._del_exclude).pack(side="left")
+        ttk.Label(r7, style="Muted.TLabel",
+                  text="  cả 3 ô đều bị loại trừ → reroll; hết reroll thì DỪNG, không chốt bừa"
+                  ).pack(side="left", padx=(8, 0))
+
         self._refresh_mods()
         self._refresh_conds()
+        self._refresh_excludes()
 
     def _refresh_frame_label(self):
         if not getattr(self, "frame_label", None):
@@ -1096,6 +1129,32 @@ class ActionEditor(tk.Toplevel):
         for i, c in enumerate(self.conditions, 1):
             self.cond_box.insert(tk.END, f"{i}.  {disp(c)}")
 
+    # ---- bảng loại trừ (chỉ có ở Abyss) ----
+    def _add_exclude(self):
+        sel = self.master_box.curselection()
+        if not sel:
+            messagebox.showinfo("Chọn mod", "Hãy chọn 1 mod trong danh sách trước.", parent=self)
+            return
+        mod = self.master_box.get(sel[0])
+        if any(e.get("mod") == mod for e in self.excludes):
+            return                          # đã có rồi, thêm nữa cũng vô nghĩa
+        self.excludes.append({"mod": mod})
+        self._refresh_excludes()
+
+    def _del_exclude(self):
+        s = self.excl_box.curselection()
+        if not s:
+            return
+        del self.excludes[s[0]]
+        self._refresh_excludes()
+
+    def _refresh_excludes(self):
+        if not getattr(self, "excl_box", None):
+            return
+        self.excl_box.delete(0, tk.END)
+        for i, e in enumerate(self.excludes, 1):
+            self.excl_box.insert(tk.END, f"{i}.  {e.get('mod', '')}")
+
     def _cond_sel(self):
         s = self.cond_box.curselection()
         return s[0] if s else None
@@ -1152,6 +1211,8 @@ class ActionEditor(tk.Toplevel):
                      "conditions": [dict(c) for c in self.conditions],
                      "rerolls": rr, "wait_ms": wm,
                      "pick": ABYSS_PICK_FROM_LABEL.get(self.pick_var.get(), ABYSS_PICK_RANDOM)}
+                if self.excludes:          # rỗng thì không ghi, cho file gọn
+                    a["excludes"] = [dict(e) for e in self.excludes]
             elif t == "mod_click":
                 keys = [k for k, v in (("ctrl", self.k_ctrl), ("shift", self.k_shift),
                                        ("alt", self.k_alt)) if v.get()]
@@ -1387,17 +1448,18 @@ class AutoClickerApp:
 
     @property
     def actions(self):
-        """Danh sách hành động của Action_Loop đang chọn (rỗng nếu bước là hành động lẻ)."""
+        """Danh sách hành động của bước đang chọn (Loop hoặc Nhóm).
+        Rỗng nếu bước là hành động lẻ — loại đó chỉ có đúng 1 hành động, không có list."""
         st = self.cur_step
-        if st is not None and is_loop_step(st):
+        if st is not None and has_actions(st):
             return st.setdefault("actions", [])
         return []
 
     @actions.setter
     def actions(self, value):
-        """Gán thẳng danh sách hành động cho Action_Loop đang chọn."""
+        """Gán thẳng danh sách hành động cho bước đang chọn (Loop hoặc Nhóm)."""
         st = self.cur_step
-        if st is not None and is_loop_step(st):
+        if st is not None and has_actions(st):
             st["actions"] = list(value)
 
     # ---- UI ----
@@ -1441,8 +1503,9 @@ class AutoClickerApp:
 
         sb1 = ttk.Frame(lwrap)
         sb1.pack(fill="x", pady=(6, 0))
-        ttk.Button(sb1, text="➕ Loop", width=11, command=self.add_loop_step).pack(side="left")
-        ttk.Button(sb1, text="➕ HĐ lẻ", width=11, command=self.add_action_step).pack(side="left", padx=4)
+        ttk.Button(sb1, text="➕ Loop", width=9, command=self.add_loop_step).pack(side="left")
+        ttk.Button(sb1, text="➕ Nhóm", width=9, command=self.add_group_step).pack(side="left", padx=4)
+        ttk.Button(sb1, text="➕ HĐ lẻ", width=9, command=self.add_action_step).pack(side="left")
         sb2 = ttk.Frame(lwrap)
         sb2.pack(fill="x", pady=(4, 0))
         ttk.Button(sb2, text="🏷 Đổi tên", width=11, command=self.rename_step).pack(side="left")
@@ -1521,21 +1584,27 @@ class AutoClickerApp:
     # ---- khung sửa: Action_Loop ----
     def _build_loop_pane(self):
         f = ttk.LabelFrame(self.detail, text="Sửa Action_Loop", padding=8)
+        self.pane_frame = f
         self.loop_pane = f
 
         top = ttk.Frame(f)
         top.pack(fill="x")
-        ttk.Label(top, text="Tên Loop:").pack(side="left")
+        self.name_lbl = ttk.Label(top, text="Tên Loop:")
+        self.name_lbl.pack(side="left")
         self.loop_name_var = tk.StringVar()
         ttk.Entry(top, textvariable=self.loop_name_var, width=24).pack(side="left", padx=(4, 14))
         ttk.Label(top, text="Số vòng lặp:").pack(side="left")
         self.loops_var = tk.StringVar(value=str(DEFAULT_MAX_LOOPS))
-        ttk.Entry(top, textvariable=self.loops_var, width=8).pack(side="left", padx=4)
+        self.loops_lbl = top.winfo_children()[-1]      # nhãn "Số vòng lặp:" vừa tạo
+        self.loops_entry = ttk.Entry(top, textvariable=self.loops_var, width=8)
+        self.loops_entry.pack(side="left", padx=4)
         # Giữ Shift là THUỘC TÍNH CỦA LOOP, không phải một hành động: phạm vi của
         # nó đúng bằng cái khung này, không phụ thuộc thứ tự hay dấu "🔁 Loop từ đây".
         self.hold_shift_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(top, text="⇧ Giữ Shift suốt Loop", variable=self.hold_shift_var,
-                        command=self._sync_loop_fields).pack(side="left", padx=(14, 0))
+        self.hold_chk = ttk.Checkbutton(top, text="⇧ Giữ Shift suốt Loop",
+                                        variable=self.hold_shift_var,
+                                        command=self._sync_loop_fields)
+        self.hold_chk.pack(side="left", padx=(14, 0))
         self.loop_name_var.trace_add("write", lambda *_: self._sync_loop_fields())
         self.loops_var.trace_add("write", lambda *_: self._sync_loop_fields())
 
@@ -1570,11 +1639,13 @@ class AutoClickerApp:
         ]:
             ttk.Button(col, text=text, width=12, command=cmd).pack(pady=2)
         ttk.Separator(col, orient="horizontal").pack(fill="x", pady=6)
-        ttk.Button(col, text="🔁 Loop từ đây", width=12, command=self.set_loop_start).pack(pady=2)
+        self.loop_start_btn = ttk.Button(col, text="🔁 Loop từ đây", width=12,
+                                         command=self.set_loop_start)
+        self.loop_start_btn.pack(pady=2)
 
-        ttk.Label(f, style="Muted.TLabel",
-                  text='Xám + "(1 lần)" = chạy 1 lần lúc đầu   •   🔁 = lặp mỗi vòng   •   '
-                       'thêm "🔍 Kiểm tra mod" để Loop tự dừng khi đạt').pack(anchor="w", pady=(6, 0))
+        self.pane_hint = ttk.Label(f, style="Muted.TLabel", text="")
+        self.pane_hint.pack(anchor="w", pady=(6, 0))
+        self._apply_pane_mode(True)
 
     # ---- khung sửa: hành động lẻ ----
     def _build_action_pane(self):
@@ -1631,12 +1702,16 @@ class AutoClickerApp:
 
         self._syncing = True
         try:
-            if is_loop_step(st):
+            if has_actions(st):
+                # Nhóm dùng CHUNG khung với Loop, chỉ khoá 3 thứ không liên quan.
                 self.action_pane.pack_forget()
                 self.loop_pane.pack(fill="both", expand=True)
                 self.loop_name_var.set(st.get("name") or "")
-                self.loops_var.set(str(st.get("max_loops", DEFAULT_MAX_LOOPS)))
-                self.hold_shift_var.set(bool(parse_hold_keys(st.get("hold_keys"))))
+                self.loops_var.set(str(st.get("max_loops", DEFAULT_MAX_LOOPS))
+                                   if is_loop_step(st) else "1")
+                self.hold_shift_var.set(bool(parse_hold_keys(st.get("hold_keys")))
+                                        if is_loop_step(st) else False)
+                self._apply_pane_mode(is_loop_step(st))
                 self.refresh()
             else:
                 self.loop_pane.pack_forget()
@@ -1646,12 +1721,36 @@ class AutoClickerApp:
         finally:
             self._syncing = False
 
+    def _apply_pane_mode(self, is_loop):
+        """Khung bên phải dùng chung cho Loop và Nhóm HĐ 1 lần.
+        Nhóm không lặp nên khoá hẳn 3 thứ vô nghĩa với nó: Số vòng lặp,
+        ⇧ Giữ Shift, và 🔁 Loop từ đây."""
+        state = "normal" if is_loop else "disabled"
+        for w in (self.loops_entry, self.hold_chk, self.loop_start_btn):
+            try:
+                w.config(state=state)
+            except tk.TclError:
+                pass
+        self.loops_lbl.config(foreground=THEME["text"] if is_loop else THEME["dim"])
+        self.pane_frame.config(text="Sửa Action_Loop" if is_loop else "Sửa Nhóm HĐ 1 lần")
+        self.name_lbl.config(text="Tên Loop:" if is_loop else "Tên nhóm:")
+        self.pane_hint.config(
+            text=('Xám + "(1 lần)" = chạy 1 lần lúc đầu   •   🔁 = lặp mỗi vòng   •   '
+                  'thêm "🔍 Kiểm tra mod" để Loop tự dừng khi đạt') if is_loop else
+            ('Cả nhóm chạy ĐÚNG 1 LƯỢT theo thứ tự trên xuống   •   không lặp nên '
+             'không có số vòng, không có "Loop từ đây"'))
+
     def _sync_loop_fields(self):
-        """Ô Tên Loop / Số vòng đổi -> ghi ngược vào bước đang chọn."""
+        """Ô Tên / Số vòng / tick Shift đổi -> ghi ngược vào bước đang chọn."""
         if getattr(self, "_syncing", False):
             return
         st = self.cur_step
-        if st is None or not is_loop_step(st):
+        if st is None or not has_actions(st):
+            return
+        if is_group_step(st):
+            st["name"] = self.loop_name_var.get().strip() or "Nhóm"
+            self.refresh_steps()
+            self.refresh()
             return
         st["name"] = self.loop_name_var.get().strip() or "Loop"
         st["hold_keys"] = "shift" if self.hold_shift_var.get() else ""
@@ -1661,6 +1760,13 @@ class AutoClickerApp:
             pass
         self.refresh_steps()
         self.refresh()          # tiền tố ⇧ trên từng dòng hành động đổi theo
+
+    def add_group_step(self):
+        self.steps.insert(self.cur + 1 if self.steps else 0,
+                          make_group_step(f"Nhóm {len(self.steps) + 1}"))
+        self.refresh_steps()
+        self.select_step(self.cur + 1 if len(self.steps) > 1 else 0)
+        self.status.set("Đã thêm 1 Nhóm HĐ 1 lần.")
 
     def add_loop_step(self):
         self.steps.insert(self.cur + 1 if self.steps else 0,
@@ -1681,7 +1787,7 @@ class AutoClickerApp:
 
     def edit_single_action(self):
         st = self.cur_step
-        if st is None or is_loop_step(st):
+        if st is None or has_actions(st):
             return
         dlg = ActionEditor(self.root, self, st)
         self.root.wait_window(dlg)
@@ -1697,14 +1803,15 @@ class AutoClickerApp:
         cur_name = st.get("name") or ""
         new = simpledialog.askstring(
             "Đổi tên bước",
-            "Tên bước (để trống = dùng mô tả tự sinh):" if not is_loop_step(st)
-            else "Tên Action_Loop:",
+            "Tên Action_Loop:" if is_loop_step(st) else
+            ("Tên nhóm:" if is_group_step(st)
+             else "Tên bước (để trống = dùng mô tả tự sinh):"),
             initialvalue=cur_name, parent=self.root)
         if new is None:
             return "break"
         new = new.strip()
-        if is_loop_step(st):
-            st["name"] = new or "Loop"
+        if has_actions(st):
+            st["name"] = new or ("Loop" if is_loop_step(st) else "Nhóm")
             self._syncing = True
             self.loop_name_var.set(st["name"])
             self._syncing = False
@@ -1773,6 +1880,12 @@ class AutoClickerApp:
                     "loop_start_index": min(start, len(acts)),
                     "max_loops": max_loops,
                     "hold_keys": st.get("hold_keys") or ""}
+        if st.get("kind") == "group":
+            return {"kind": "group",
+                    "name": str(st.get("name") or "Nhóm"),
+                    "actions": copy.deepcopy(
+                        [a for a in (st.get("actions") or [])
+                         if isinstance(a, dict) and a.get("type") in ACTION_TYPES])}
         if st.get("type") in ACTION_TYPES:
             return make_action_step(copy.deepcopy(st))
         return None
@@ -1833,12 +1946,19 @@ class AutoClickerApp:
 
     def refresh(self):
         st = self.cur_step
-        if st is None or not is_loop_step(st):
+        if st is None or not has_actions(st):
             self.refresh_problems()
             return
         self.listbox.delete(0, tk.END)
         acts = self.actions
         n = len(acts)
+        if is_group_step(st):
+            # Nhóm: mọi dòng bình đẳng, đều chạy đúng 1 lượt. Không dấu 🔁, không
+            # đuôi "(1 lần)", không dòng nào bị xám — vì không có phần lặp.
+            for idx, a in enumerate(acts):
+                self.listbox.insert(tk.END, f"    {idx + 1}.  {action_display(a)}")
+            self.refresh_steps()
+            return
         start = max(0, min(self.loop_start_index, n))
         self.loop_start_index = start
         # Tick "Giữ Shift" bật -> gắn ⇧ vào TỪNG dòng, để nhìn 1 dòng vẫn biết cú
@@ -1961,7 +2081,7 @@ class AutoClickerApp:
             self.step_box.see(si)
         i = p.get("index")
         st = self.cur_step
-        if i is not None and st is not None and is_loop_step(st) and 0 <= i < len(self.actions):
+        if i is not None and st is not None and has_actions(st) and 0 <= i < len(self.actions):
             self.listbox.selection_clear(0, tk.END)
             self.listbox.selection_set(i)
             self.listbox.see(i)
@@ -2190,7 +2310,7 @@ class AutoClickerApp:
             pts.append((pt[0], pt[1], label, color))
 
         for si, st in enumerate(self.steps, 1):
-            if is_loop_step(st):
+            if has_actions(st):
                 for i, a in enumerate(st.get("actions") or [], 1):
                     add(a, f"{si}.{i} {step_title(st)}")
             else:
@@ -2239,10 +2359,15 @@ class AutoClickerApp:
                         command=self.save_process_template)
         st = self.cur_step
         can_loop = st is not None and is_loop_step(st)
+        can_group = st is not None and is_group_step(st)
         mnu.add_command(label=f"🔁 Lưu riêng Loop đang chọn"
                               f"{'' if can_loop else '  (bước hiện tại không phải Loop)'}",
                         command=self.save_loop_template,
                         state=("normal" if can_loop else "disabled"))
+        mnu.add_command(label=f"▤ Lưu riêng Nhóm đang chọn"
+                              f"{'' if can_group else '  (bước hiện tại không phải Nhóm)'}",
+                        command=self.save_group_template,
+                        state=("normal" if can_group else "disabled"))
         mnu.add_separator()
         mnu.add_command(label="📄 Lưu ra file khác...", command=self.save_template)
         self._popup_under(self.save_btn, mnu)
@@ -2252,6 +2377,8 @@ class AutoClickerApp:
         mnu.add_command(label="📂 Mở Process (thay toàn bộ)", command=self.open_process_template)
         mnu.add_command(label="➕ Chèn Loop có sẵn vào Process này",
                         command=self.insert_loop_template)
+        mnu.add_command(label="➕ Chèn Nhóm có sẵn vào Process này",
+                        command=self.insert_group_template)
         mnu.add_separator()
         mnu.add_command(label="📄 Mở từ file khác...", command=self.load_template)
         self._popup_under(self.open_btn, mnu)
@@ -2295,7 +2422,8 @@ class AutoClickerApp:
         st = self.cur_step
         if st is None or not is_loop_step(st):
             messagebox.showinfo("Không phải Loop",
-                                "Bước đang chọn là hành động lẻ. Hãy chọn 1 Action_Loop rồi lưu lại.")
+                                "Bước đang chọn không phải Action_Loop.\n"
+                                "Nếu là Nhóm HĐ 1 lần thì dùng \"▤ Lưu riêng Nhóm đang chọn\".")
             return
         if not (st.get("actions") or []):
             if not messagebox.askyesno("Loop rỗng",
@@ -2331,13 +2459,58 @@ class AutoClickerApp:
             messagebox.showerror(
                 "Sai loại template",
                 "File này không phải template Action_Loop.\n"
-                "Nếu đây là template Process, hãy dùng \"Mở Process\" thay vì \"Chèn Loop\".")
+                "Nếu là template Nhóm, hãy dùng \"Chèn Nhóm có sẵn\".\n"
+                "Nếu là template Process, hãy dùng \"Mở Process\".")
             return
         pos = self.cur + 1 if self.steps else 0
         self.steps.insert(pos, step)
         self.refresh_steps()
         self.select_step(pos)
         self.status.set(f"Đã chèn Loop \"{step['name']}\" vào Process.")
+
+    def save_group_template(self):
+        st = self.cur_step
+        if st is None or not is_group_step(st):
+            messagebox.showinfo("Không phải Nhóm",
+                                "Bước đang chọn không phải Nhóm HĐ 1 lần.\n"
+                                "Nếu là Action_Loop thì dùng \"🔁 Lưu riêng Loop đang chọn\".")
+            return
+        if not (st.get("actions") or []):
+            if not messagebox.askyesno("Nhóm rỗng",
+                                       "Nhóm này chưa có hành động nào. Vẫn lưu?"):
+                return
+        path = self._ask_template_name("group", st.get("name") or "Nhóm")
+        if not path:
+            return
+        try:
+            write_json(path, make_group_template(st, self.settings["game"]))
+            self.status.set(f"Đã lưu template Nhóm: {os.path.basename(path)}")
+        except Exception as e:
+            messagebox.showerror("Lỗi", str(e))
+
+    def insert_group_template(self):
+        dlg = TemplatePicker(self.root, "group", "Chèn Nhóm HĐ 1 lần có sẵn")
+        self.root.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
+            data = read_json(dlg.result)
+        except Exception as e:
+            messagebox.showerror("Lỗi", str(e))
+            return
+        step = normalize_group_template(data)
+        if step is None:
+            messagebox.showerror(
+                "Sai loại template",
+                "File này không phải template Nhóm HĐ 1 lần.\n"
+                "Nếu là template Action_Loop, hãy dùng \"Chèn Loop có sẵn\".\n"
+                "Nếu là template Process, hãy dùng \"Mở Process\".")
+            return
+        pos = self.cur + 1 if self.steps else 0
+        self.steps.insert(pos, step)
+        self.refresh_steps()
+        self.select_step(pos)
+        self.status.set(f"Đã chèn Nhóm \"{step['name']}\" vào Process.")
 
     def save_template(self):
         if not self.steps:
