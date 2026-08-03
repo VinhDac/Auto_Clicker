@@ -786,7 +786,6 @@ class ActionEditor(tk.Toplevel):
         self.body.pack(fill="x")
         self.x_var = tk.StringVar(value="0")
         self.y_var = tk.StringVar(value="0")
-        self.amount_var = tk.StringVar(value="-300")
         self.key_var = tk.StringVar(value="enter")
         self.min_var = tk.StringVar(value="200")
         self.max_var = tk.StringVar(value="1000")
@@ -822,8 +821,6 @@ class ActionEditor(tk.Toplevel):
                 if pt:
                     self.x_var.set(pt[0])
                     self.y_var.set(pt[1])
-            if action["type"] == "scroll":
-                self.amount_var.set(action.get("amount", -300))
             if action["type"] == "key_press":
                 self.key_var.set(action.get("key", "enter"))
             if action["type"] == "delay":
@@ -882,9 +879,6 @@ class ActionEditor(tk.Toplevel):
             ttk.Entry(self.body, textvariable=self.y_var, width=8).grid(row=2, column=3, sticky="w")
             ttk.Button(self.body, text="🎯 Chọn điểm (crosshair)", command=self._pick).grid(
                 row=3, column=0, columnspan=4, pady=(8, 0), sticky="ew")
-        elif t == "scroll":
-            ttk.Label(self.body, text="Lượng cuộn (âm = xuống):").grid(row=0, column=0, sticky="w")
-            ttk.Entry(self.body, textvariable=self.amount_var, width=8).grid(row=0, column=1, padx=6)
         elif t == "key_press":
             ttk.Label(self.body, text="Phím (vd: enter, a, space, escape):").grid(row=0, column=0, sticky="w")
             ttk.Entry(self.body, textvariable=self.key_var, width=14).grid(row=0, column=1, padx=6)
@@ -1169,8 +1163,6 @@ class ActionEditor(tk.Toplevel):
                      "button": "left" if self.button_var.get() == "Trái" else "right"}
             elif t in POINT_TYPES:
                 a = {"type": t, "point": [int(self.x_var.get()), int(self.y_var.get())]}
-            elif t == "scroll":
-                a = {"type": t, "amount": int(self.amount_var.get())}
             elif t == "key_press":
                 k = self.key_var.get().strip()
                 if not k:

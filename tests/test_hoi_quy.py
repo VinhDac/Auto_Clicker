@@ -104,16 +104,14 @@ try:
     ev = threading.Event()
     core.do_action({"type": "left_click", "point": [5, 6]}, ev)
     core.do_action({"type": "right_click", "point": [7, 8]}, ev)
-    core.do_action({"type": "double_click", "point": [9, 10]}, ev)
-    core.do_action({"type": "scroll", "amount": -120}, ev)
     core.do_action({"type": "key_press", "key": "enter"}, ev)
+    core.do_action({"type": "delay", "min_ms": 0, "max_ms": 0}, ev)
     core.do_action({"type": "mod_click", "point": [1, 2], "keys": "ctrl+shift",
                     "button": "left"}, ev)
-    check("trái/phải/double click đúng",
-          gui.clicks[0] == ((5, 6), "left") and gui.clicks[1] == ((7, 8), "right")
-          and gui.clicks[2] == ((9, 10), "double"), gui.clicks[:3])
-    check("scroll + phím đúng",
-          ("scroll", -120) in gui.clicks and ("key", "enter") in gui.clicks, gui.clicks)
+    check("trái/phải click đúng",
+          gui.clicks[0] == ((5, 6), "left") and gui.clicks[1] == ((7, 8), "right"),
+          gui.clicks[:2])
+    check("nhấn phím đúng", ("key", "enter") in gui.clicks, gui.clicks)
     check("mod_click giữ rồi THẢ hết phím (đúng thứ tự ngược)",
           gui.clicks[-3:] == [((1, 2), "left"), ("up", "shift"), ("up", "ctrl")],
           gui.clicks[-4:])
@@ -160,10 +158,7 @@ root.update()
 samples = {
     "left_click": {"type": "left_click", "point": [1, 2]},
     "right_click": {"type": "right_click", "point": [1, 2]},
-    "double_click": {"type": "double_click", "point": [1, 2]},
-    "move": {"type": "move", "point": [1, 2]},
     "mod_click": {"type": "mod_click", "point": [1, 2], "keys": "ctrl", "button": "left"},
-    "scroll": {"type": "scroll", "amount": -300},
     "key_press": {"type": "key_press", "key": "enter"},
     "delay": {"type": "delay", "min_ms": 100, "max_ms": 200},
     "check_mod": {"type": "check_mod", "point": [1, 2],
@@ -180,7 +175,7 @@ for t, act in samples.items():
         root.update()
     except Exception as e:
         bad.append((t, repr(e)))
-check("cả 10 loại mở được không lỗi", not bad, bad)
+check("cả 7 loại mở được không lỗi", not bad, bad)
 
 print("\n=== 6. Đổi loại giữa Abyss và check_mod ngay trong hộp thoại ===")
 try:
@@ -197,6 +192,20 @@ try:
     check("đổi qua lại không lỗi", True)
 except Exception as e:
     check("đổi qua lại không lỗi", False, repr(e))
+
+
+print("\n=== 7. Đã gỡ 3 loại không dùng: move / double_click / scroll ===")
+go_bo = {"move", "double_click", "scroll"}
+check("không còn trong danh sách loại", not go_bo & set(core.ACTION_TYPES),
+      core.ACTION_TYPES)
+check("còn đúng 7 loại", len(core.ACTION_TYPES) == 7, core.ACTION_TYPES)
+check("POINT_TYPES chỉ còn trái/phải click",
+      set(core.POINT_TYPES) == {"left_click", "right_click"}, core.POINT_TYPES)
+for t in go_bo:
+    p = core.validate_flow([{"type": t, "point": [1, 2]}], 0, 10)
+    check(f"template cũ còn \"{t}\" -> BÁO LỖI chứ không chạy mù",
+          any(x["severity"] == "error" and "không còn được hỗ trợ" in x["message"]
+              for x in p), p)
 
 root.update()
 root.destroy()

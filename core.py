@@ -613,6 +613,12 @@ def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=No
 
     for i, a in enumerate(actions):
         t = a.get("type")
+        if t not in ACTION_TYPES:
+            # Template lưu từ bản cũ có thể còn "move"/"double_click"/"scroll".
+            # do_action() sẽ lặng lẽ không làm gì -> phải báo, không để chạy mù.
+            err(f"Loại hành động \"{t}\" không còn được hỗ trợ — xoá dòng này "
+                f"hoặc thay bằng loại khác.", i)
+            continue
         if t == "check_mod":
             if not a.get("point"):
                 err("\"Kiểm tra mod\" chưa chọn điểm rê chuột vào item.", i)
@@ -701,12 +707,11 @@ def validate_process(steps, has_clip=None, screen=None):
 
 
 # ---------------- Hành động ----------------
-ACTION_TYPES = ["left_click", "right_click", "double_click", "move",
-                "mod_click", "scroll", "key_press", "delay", "check_mod", "abyss"]
+ACTION_TYPES = ["left_click", "right_click", "mod_click", "key_press", "delay",
+                "check_mod", "abyss"]
 ACTION_LABELS = {
     "left_click": "Trái-click", "right_click": "Phải-click",
-    "double_click": "Double-click", "move": "Di chuyển tới",
-    "mod_click": "Giữ phím + click", "scroll": "Cuộn chuột",
+    "mod_click": "Giữ phím + click",
     "key_press": "Nhấn phím", "delay": "Delay",
     "check_mod": "🔍 Kiểm tra mod",
     "abyss": "🌀 Abyss — chọn mod",
@@ -749,7 +754,7 @@ class HeldKeys:
             except Exception:
                 pass
         self.keys = []
-POINT_TYPES = ("left_click", "right_click", "double_click", "move")
+POINT_TYPES = ("left_click", "right_click")
 # Phím giữ hay dùng trong PoE: Shift+click (tách stack), Ctrl+click (chuyển stash)
 MOD_KEYS = ["ctrl", "shift", "alt"]      # 3 phím bổ trợ, giao diện cho tick chọn
 
@@ -802,8 +807,6 @@ def action_summary(a):
         return f"Giữ [{keys}] + click {btn} {loc}"
     if t in POINT_TYPES:
         return f"{ACTION_LABELS[t]} @ ({a['point'][0]}, {a['point'][1]})"
-    if t == "scroll":
-        return f"Cuộn {a.get('amount', -300)}"
     if t == "key_press":
         return f"Nhấn phím: {a.get('key', '')}"
     if t == "delay":
@@ -834,19 +837,14 @@ def _point_of(a):
 
 def do_action(a, stop_flag, pre_click_ms=0):
     t = a["type"]
-    if t in ("left_click", "right_click", "double_click"):
+    if t in POINT_TYPES:
         x, y = _point_of(a)
         pyautogui.moveTo(x, y)
         if pre_click_ms > 0:
             human_sleep(pre_click_ms, pre_click_ms, stop_flag)
         if stop_flag.is_set():
             return
-        if t == "left_click":
-            pyautogui.click(button="left")
-        elif t == "right_click":
-            pyautogui.click(button="right")
-        else:
-            pyautogui.doubleClick()
+        pyautogui.click(button="left" if t == "left_click" else "right")
     elif t == "mod_click":
         x, y = _point_of(a)
         keys = parse_hold_keys(a.get("keys"))
@@ -874,11 +872,6 @@ def do_action(a, stop_flag, pre_click_ms=0):
                     pyautogui.keyUp(k)
                 except Exception:
                     pass
-    elif t == "move":
-        x, y = _point_of(a)
-        pyautogui.moveTo(x, y, duration=0.1)
-    elif t == "scroll":
-        pyautogui.scroll(a.get("amount", -300))
     elif t == "key_press":
         pyautogui.press(a["key"])
     elif t == "delay":
