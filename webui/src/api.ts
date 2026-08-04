@@ -64,6 +64,11 @@ export const py = {
   action_defaults: (t: string) => goi<Record<string, unknown>>('action_defaults', t),
   get_mods: (game?: string) => goi<string[]>('get_mods', game ?? null),
 
+  // --- chạy / dừng ---
+  run: (name: string, steps: Step[], startDelay: number, boQuaCanhBao = false) =>
+    goi<{ hotkey: string }>('run', name, steps, startDelay, boQuaCanhBao),
+  stop: () => goi<null>('stop'),
+
   // --- 3 overlay chọn trên màn hình (chạy tiến trình con tkinter) ---
   pick_point: () => goi<[number, number]>('pick_point'),
   pick_abyss_frame: (frame?: number[] | null) => goi<number[]>('pick_abyss_frame', frame ?? null),

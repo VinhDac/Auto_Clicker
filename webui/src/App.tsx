@@ -76,7 +76,9 @@ function Ung() {
   const [startDelay, setStartDelay] = useState(3)
   const [vanDe, setVanDe] = useState<Problem[]>([])
   const [tab, setTab] = useState<'van-de' | 'nhat-ky'>('van-de')
-  const [nhatKy, setNhatKy] = useState<string[]>([])
+  const [nhatKy, setNhatKy] = useState<{ gio: string; msg: string; tag?: string | null }[]>([])
+  const [dangChay, setDangChay] = useState(false)
+  const [phimDung, setPhimDung] = useState('F6')
   const [sanSang, setSanSang] = useState(false)
   const [trangThai, setTrangThai] = useState('đang khởi động…')
   const [boot, setBoot] = useState<Bootstrap | null>(null)
@@ -87,12 +89,13 @@ function Ung() {
 
   const lui = useRef<Anh[]>([])
   const toi = useRef<Anh[]>([])
+  const cuoiLog = useRef<HTMLDivElement>(null)
   const [coLui, setCoLui] = useState(false)
   const [coToi, setCoToi] = useState(false)
 
-  const ghi = useCallback((m: string) => {
+  const ghi = useCallback((m: string, tag?: string | null) => {
     const gio = new Date().toLocaleTimeString('vi-VN', { hour12: false })
-    setNhatKy(x => [...x.slice(-400), `${gio}  ${m}`])
+    setNhatKy(x => [...x.slice(-600), { gio, msg: m, tag }])
   }, [])
 
   /** Chụp trạng thái TRƯỚC khi thay đổi. Ảnh chụp nguyên khối thay vì tính diff:
@@ -166,6 +169,11 @@ function Ung() {
     return () => clearTimeout(h)
   }, [nodes, sanSang])
 
+  /* Nhật ký tự cuộn xuống đáy — đang chạy mà phải cuộn tay thì không theo dõi nổi. */
+  useEffect(() => {
+    if (tab === 'nhat-ky') cuoiLog.current?.scrollIntoView({ block: 'end' })
+  }, [nhatKy, tab])
+
   /* ------------------------------ thao tác ------------------------------- */
   const dangChon = useMemo(() => nodes.filter(n => n.selected), [nodes])
 
@@ -234,6 +242,51 @@ function Ung() {
     ghi(`sửa "${card?.title ?? s.name ?? s.id}"`)
   }, [chup, setNodes, ghi])
 
+  /* ------------------------------ chạy / dừng ----------------------------- */
+  /* Python ĐẨY diễn biến sang đây (đã gom lô 150ms một lần ở phía Python — mỗi lần
+     qua cầu nối là một vòng IPC, đẩy từng dòng sẽ ngốn hết luồng giao diện). */
+  useEffect(() => {
+    ;(window as any).__su_kien = (ten: string, d: any) => {
+      if (ten !== 'run') return
+      if (d.status) setTrangThai(d.status)
+      if (d.log?.length) {
+        const gio = new Date().toLocaleTimeString('vi-VN', { hour12: false })
+        setNhatKy(x => [...x, ...d.log.map((l: any) => ({ gio, msg: l.msg, tag: l.tag }))].slice(-600))
+        const cuoi = d.log[d.log.length - 1]
+        if (cuoi?.het) {
+          setDangChay(false)
+          setTrangThai(cuoi.msg)
+        }
+      }
+    }
+    return () => { delete (window as any).__su_kien }
+  }, [])
+
+  const chay = useCallback(async (boQua = false) => {
+    const steps = rf_sang_steps(nodes)
+    const r = await py.run(ten, steps, startDelay, boQua)
+    if (!r.ok) {
+      if ((r as any).can_hoi) {
+        const ds = ((r as any).canh_bao as Problem[]).map(p => '⚠ ' + p.message).join('\n\n')
+        if (window.confirm(ds + '\n\nVẫn chạy?')) chay(true)
+        return
+      }
+      const ds = ((r as any).loi as Problem[] | undefined)?.map(p => '✖ ' + p.message).join('\n\n')
+      window.alert((r.error ?? 'không chạy được') + (ds ? '\n\n' + ds : ''))
+      return
+    }
+    setPhimDung(r.value?.hotkey ?? 'F6')
+    setDangChay(true)
+    setTab('nhat-ky')
+    setTrangThai('đang chạy…')
+    ghi(`▶ Bắt đầu — nhấn ${r.value?.hotkey ?? 'F6'} để dừng bất cứ lúc nào`, 'ok')
+  }, [nodes, ten, startDelay, ghi])
+
+  const dung = useCallback(async () => {
+    await py.stop()
+    setTrangThai('đang dừng…')
+  }, [])
+
   const luu = useCallback(async () => {
     const t = window.prompt('Lưu Process với tên:', ten)
     if (!t) return
@@ -300,8 +353,9 @@ function Ung() {
         <input className="o-ten" style={{ minWidth: 56, width: 56 }} value={startDelay}
                onChange={e => setStartDelay(Math.max(0, parseInt(e.target.value) || 0))} />
         <span className="day" />
-        <button className="nut" disabled title="Sẽ nối ở P3">■ Dừng</button>
-        <button className="nut chinh" disabled title="Sẽ nối ở P3">▶ Chạy</button>
+        {dangChay && <span className="nhan dang-chay">● đang chạy — {phimDung} để dừng</span>}
+        <button className="nut" onClick={dung} disabled={!dangChay}>■ Dừng</button>
+        <button className="nut chinh" onClick={() => chay()} disabled={dangChay}>▶ Chạy</button>
       </div>
 
       <Ribbon
@@ -369,7 +423,14 @@ function Ung() {
           ) : (
             nhatKy.length === 0
               ? <div className="trong">Chưa có gì.</div>
-              : <div className="nhat-ky">{nhatKy.join('\n')}</div>
+              : <div className="nhat-ky">
+                  {nhatKy.map((l, i) => (
+                    <div key={i} className={'dong-log' + (l.tag ? ' t-' + l.tag : '')}>
+                      <span className="gio">{l.gio}</span>{l.msg}
+                    </div>
+                  ))}
+                  <div ref={cuoiLog} />
+                </div>
           )}
         </div>
       </div>

@@ -30,6 +30,7 @@ AN_TOAN = [
     ("test_nhom_hd.py", "Nhóm HĐ 1 lần: khung dùng chung, chạy 1 lượt, template"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
     ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
+    ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
 ]
 
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.

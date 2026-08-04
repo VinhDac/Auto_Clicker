@@ -225,7 +225,27 @@ App tkinter cũ **chạy được suốt P0–P3**. Đây là điều lần trư
   - **Hai lớp lỗi của bản tkinter biến mất theo kiến trúc**, không phải nhờ sửa:
     hộp thoại "loé" lúc mở (web dựng xong mới vẽ) và `ttk.Combobox` chiếm grab toàn
     cục làm treo cả máy (web không có khái niệm grab)
-- **P3 — Nối 3 overlay + nút Chạy/Dừng + nhật ký + đóng gói.** Tới đây app dùng được thật
+- **P3 — Chạy/Dừng + nhật ký + đóng gói** ✅ **XONG — app dùng được thật**
+  - ✅ `api.run()` chạy `ProcessRunner` trong luồng riêng và **trả về NGAY**. Chờ chạy
+    xong mới trả về thì cầu nối bị khoá, cả giao diện đứng hình suốt lúc chạy (có thể
+    hàng giờ) — kể cả nút Dừng
+  - ✅ Nhật ký đẩy sang JS **theo lô 150ms**. Mỗi `evaluate_js` là một vòng IPC; một
+    vòng lặp nhanh sinh hàng chục dòng/giây, đẩy từng dòng sẽ ngốn hết luồng giao diện
+    (bản tkinter cũng phải gom lô y hệt bằng `root.after`)
+  - ✅ Phím dừng toàn cục đăng ký **hai kiểu** như bản cũ: `add_hotkey` khớp đúng tổ
+    hợp, cộng `on_press_key` bắt theo scan code — vì khi Loop đang giữ Shift thì F6 bị
+    hiểu là Shift+F6 và không khớp, hỏng đúng lúc cần dừng nhất
+  - ✅ Lỗi thì chặn, cảnh báo thì **hỏi lại** (không tự quyết hộ người dùng)
+  - ✅ Đóng cửa sổ giữa lúc chạy (`events.closing`) → dừng worker, thả phím đang giữ,
+    gỡ hotkey. Không có bước này thì Shift kẹt trong cả Windows sau khi tắt app
+  - ✅ `tools/build_web.bat` + đã build thật: **44MB thư mục**, 27s
+  - ✅ **Kiểm chứng trên chính file .exe**, không suy từ bản chạy nguồn: cửa sổ mở
+    trong 0,8s · 98% điểm ảnh tối (không trắng bóc) · đường `--overlay` trả đúng toạ độ
+  - ✅ **Quét Windows Defender: 0 phát hiện mới, exe còn nguyên.** Giữ `--onedir`
+  - ✅ Bộ test mới `test_chay_web.py` (24) — Process chỉ gồm `delay` nên không đụng
+    chuột thật, vẫn chạy bộ máy thật. **Tổng: 582 check / 15 bài, tất cả xanh**
+  - **Đo được:** overlay sẵn sàng ~1s ở CẢ bản nguồn lẫn bản đóng gói — không có độ
+    trễ nào do tách tiến trình
 - **P4 — Theme sáng**, rồi mới tới **rẽ nhánh check_mod**
 
 ---

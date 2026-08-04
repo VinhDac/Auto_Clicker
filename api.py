@@ -18,6 +18,8 @@ Luật cứng của tầng này:
 import os
 import sys
 import json
+import queue
+import threading
 import subprocess
 import traceback
 
@@ -125,6 +127,181 @@ def _bat_loi(fn):
 
 class Api:
     """Đối tượng được gắn vào `window.pywebview.api` phía JS."""
+
+    def __init__(self):
+        self.window = None            # app_web.py gán vào sau khi tạo cửa sổ
+        self.stop_flag = threading.Event()
+        self._runner = None
+        self._thread = None
+        self._hang = queue.Queue()    # hàng đợi dòng nhật ký
+        self._trang_thai = None
+        self._hotkey = None
+        self._hotkey_raw = None
+
+    # ---------------- đẩy sự kiện sang JS ----------------
+    def _ban(self, ten, du_lieu):
+        """Gọi `window.__su_kien(ten, dulieu)` bên JS. Nuốt mọi lỗi: cửa sổ có thể
+        đã đóng giữa chừng, mà worker thì không được phép chết vì chuyện đó."""
+        if not self.window:
+            return
+        try:
+            self.window.evaluate_js(
+                f"window.__su_kien && window.__su_kien({json.dumps(ten)},"
+                f"{json.dumps(du_lieu, ensure_ascii=False)})")
+        except Exception:
+            pass
+
+    def _bom_nhat_ky(self):
+        """Gom nhật ký rồi đẩy THÀNH LÔ mỗi 150ms.
+
+        Mỗi `evaluate_js` là một vòng qua cầu nối; một vòng lặp nhanh có thể sinh
+        hàng chục dòng mỗi giây, đẩy từng dòng một sẽ ngốn hết thời gian của luồng
+        giao diện. Bản tkinter cũng phải làm đúng thế này với `root.after`."""
+        while True:
+            dong = []
+            try:
+                dong.append(self._hang.get(timeout=0.15))
+            except queue.Empty:
+                pass
+            while True:
+                try:
+                    dong.append(self._hang.get_nowait())
+                except queue.Empty:
+                    break
+            goi = {}
+            if dong:
+                goi["log"] = dong
+            if self._trang_thai is not None:
+                goi["status"] = self._trang_thai
+                self._trang_thai = None
+            if goi:
+                self._ban("run", goi)
+            if dong and dong[-1].get("het"):
+                return
+            if not self._thread or not self._thread.is_alive():
+                # worker chết rồi mà hàng đợi cũng cạn -> thoát, đừng quay vòng mãi
+                if self._hang.empty():
+                    return
+
+    # ---------------- phím dừng toàn cục ----------------
+    def _dat_hotkey(self, phim):
+        """Đăng ký HAI kiểu, cố ý.
+
+        `add_hotkey` khớp ĐÚNG tổ hợp đang giữ, nên khi Loop đang giữ Shift thì F6 bị
+        hiểu là Shift+F6 và không khớp — hỏng đúng lúc cần dừng nhất. `on_press_key`
+        bắt theo scan code nên kệ phím bổ trợ."""
+        try:
+            self._hotkey = core.keyboard.add_hotkey(phim, self.stop_flag.set)
+        except Exception:
+            self._hotkey = None
+        try:
+            self._hotkey_raw = core.keyboard.on_press_key(phim, lambda _e: self.stop_flag.set())
+        except Exception:
+            self._hotkey_raw = None
+
+    def _go_hotkey(self):
+        for h, go in ((self._hotkey, core.keyboard.remove_hotkey),
+                      (self._hotkey_raw, core.keyboard.unhook_key)):
+            if h is not None:
+                try:
+                    go(h)
+                except Exception:
+                    pass
+        self._hotkey = self._hotkey_raw = None
+
+    # ---------------- chạy / dừng ----------------
+    @_bat_loi
+    def run(self, name, steps, start_delay=3, bo_qua_canh_bao=False):
+        """Chạy cả Process trong luồng riêng.
+
+        Trả về ngay lập tức — KHÔNG chờ chạy xong. Nếu chờ thì cầu nối bị khoá và cả
+        giao diện đứng hình suốt lúc chạy (có thể hàng giờ), kể cả nút Dừng.
+        Diễn biến đẩy về JS qua sự kiện "run".
+        """
+        if self._thread and self._thread.is_alive():
+            return {"ok": False, "error": "đang chạy rồi"}
+        steps = steps or []
+        if not steps:
+            return {"ok": False, "error": "Process chưa có bước nào"}
+
+        probs = core.validate_process(steps)
+        loi = [p for p in probs if p.get("severity") == "error"]
+        canh_bao = [p for p in probs if p.get("severity") != "error"]
+        if loi:
+            return {"ok": False, "error": "Không chạy được — hãy sửa lỗi trước",
+                    "loi": loi}
+        if canh_bao and not bo_qua_canh_bao:
+            # Trả về để JS hỏi lại, thay vì tự quyết hộ người dùng.
+            return {"ok": False, "can_hoi": True, "canh_bao": canh_bao}
+
+        s = core.load_settings()
+        cfg = {
+            "name": name or "Process 1",
+            "game": s.get("game", "poe2"),
+            "steps": steps,
+            "start_delay": max(0, int(start_delay or 0)),
+            "pre_click_ms": int(s.get("pre_click_ms", 60)),
+            "hover_ms": int(s.get("hover_ms", 250)),
+            "copy_keys": s.get("copy_keys", "ctrl+c"),
+            "stop_hotkey": s.get("stop_hotkey", "f6"),
+        }
+
+        self.stop_flag.clear()
+        while not self._hang.empty():        # dọn hàng đợi của lần chạy trước
+            self._hang.get_nowait()
+        self._dat_hotkey(cfg["stop_hotkey"])
+
+        def ghi_trang_thai(m):
+            self._trang_thai = m
+
+        def ghi_log(m, tag=None):
+            self._hang.put({"msg": m, "tag": tag})
+
+        def cong_viec():
+            trang_thai = "Đã dừng"
+            so_vong = 0
+            try:
+                self._runner = core.ProcessRunner(cfg, self.stop_flag,
+                                                  on_status=ghi_trang_thai, on_log=ghi_log)
+                trang_thai, so_vong = self._runner.run()
+            except BaseException as e:
+                # BẮT BUỘC bắt: đây là luồng phụ, lỗi lọt ra là luồng chết ÂM THẦM,
+                # nút Chạy kẹt mờ và phím dừng toàn cục không bao giờ được gỡ.
+                trang_thai = f"⛔ Lỗi bất ngờ: {type(e).__name__}: {e}"
+                ghi_log(traceback.format_exc(limit=6), "err")
+            finally:
+                try:
+                    if self._runner:
+                        self._runner.release_held_keys()
+                finally:
+                    self._go_hotkey()
+                self._hang.put({"msg": trang_thai, "tag": "ok", "het": True,
+                                "so_vong": so_vong})
+
+        self._thread = threading.Thread(target=cong_viec, daemon=True)
+        self._thread.start()
+        threading.Thread(target=self._bom_nhat_ky, daemon=True).start()
+        return {"ok": True, "value": {"hotkey": cfg["stop_hotkey"].upper()}}
+
+    @_bat_loi
+    def stop(self):
+        self.stop_flag.set()
+        return {"ok": True}
+
+    @_bat_loi
+    def dang_chay(self):
+        return {"ok": True, "value": bool(self._thread and self._thread.is_alive())}
+
+    def dong_app(self):
+        """app_web.py gọi khi đóng cửa sổ: dừng chạy, thả phím, gỡ hotkey.
+        Không có bước này thì Shift có thể kẹt trong cả Windows sau khi tắt app."""
+        self.stop_flag.set()
+        try:
+            if self._runner:
+                self._runner.release_held_keys()
+        except Exception:
+            pass
+        self._go_hotkey()
 
     # ---------------- khởi động ----------------
     @_bat_loi

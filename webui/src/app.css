@@ -399,3 +399,17 @@ select.o { cursor: pointer; }
 .cot-nut .nut { width: 100%; text-align: left; }
 .hang.khong-xuong-dong { flex-wrap: nowrap; }
 .o.co-gian { flex: 1 1 auto; min-width: 120px; }
+
+/* ---------------- Nhật ký chạy ---------------- */
+.nhat-ky { padding: 4px 0; }
+.dong-log { padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+.dong-log .gio { color: var(--dim); margin-right: 10px; }
+.dong-log.t-ok   { color: var(--ok); }
+.dong-log.t-warn { color: var(--warn); }
+.dong-log.t-err  { color: var(--err); }
+.dong-log.t-dim  { color: var(--dim); }
+.dong-log.t-skip { color: var(--accent); }
+
+.dang-chay { color: var(--ok) !important; }
+@keyframes nhap-nhay { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.dang-chay { animation: nhap-nhay 1.4s ease-in-out infinite; }

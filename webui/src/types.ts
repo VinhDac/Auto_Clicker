@@ -76,6 +76,15 @@ export interface Bootstrap {
   app_dir: string
 }
 
+/** Một dòng nhật ký do Python đẩy sang trong lúc chạy. */
+export interface DongLog {
+  msg: string
+  tag?: string | null
+  /** Dòng cuối cùng của lần chạy — kèm tổng số vòng. */
+  het?: boolean
+  so_vong?: number
+}
+
 export interface Reply<T> {
   ok: boolean
   value?: T

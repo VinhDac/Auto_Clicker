@@ -74,14 +74,20 @@ def main():
         return 1
 
     TIEU_DE = "Auto Clicker — PoE2"
-    webview.create_window(
+    api = Api()
+    win = webview.create_window(
         TIEU_DE,
         url=trang,
-        js_api=Api(),
+        js_api=api,
         width=1280, height=820,
         min_size=(980, 640),
         background_color="#202020",       # tránh chớp trắng trước khi CSS kịp chạy
     )
+    # Api cần cửa sổ để ĐẨY nhật ký chạy ngược về JS (JS không hỏi liên tục được).
+    api.window = win
+    # Đóng cửa sổ giữa lúc đang chạy: phải dừng worker, thả phím đang giữ và gỡ phím
+    # dừng toàn cục — nếu không Shift kẹt trong cả Windows sau khi tắt app.
+    win.events.closing += api.dong_app
 
     def sau_khi_mo():
         import time
