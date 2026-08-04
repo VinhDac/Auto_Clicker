@@ -63,6 +63,10 @@ export interface Bootstrap {
   action_labels: Record<string, string>
   template_kinds: string[]
   goal_types: string[]
+  point_types: string[]
+  mod_keys: string[]
+  hybrid_labels: Record<string, string>
+  abyss_max_rerolls: number
   default_max_loops: number
   screen: [number, number, number, number]
   has_clip: boolean

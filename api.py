@@ -145,6 +145,10 @@ class Api:
             "action_labels": dict(core.ACTION_LABELS),
             "template_kinds": list(core.TEMPLATE_KINDS),
             "goal_types": list(core.GOAL_TYPES),
+            "point_types": list(core.POINT_TYPES),
+            "mod_keys": list(core.MOD_KEYS),
+            "hybrid_labels": dict(core.HYBRID_LABELS),
+            "abyss_max_rerolls": core.ABYSS_MAX_REROLLS,
             "default_max_loops": core.DEFAULT_MAX_LOOPS,
             "screen": list(core.virtual_screen_rect()),
             "has_clip": bool(core.HAS_CLIP),
@@ -165,6 +169,36 @@ class Api:
         ngay lần thêm loại hành động thứ 9.
         """
         return {"ok": True, "value": [_the_buoc(s) for s in (steps or [])]}
+
+    # ---------------- hộp thoại hành động ----------------
+    @_bat_loi
+    def save_action(self, draft):
+        """Kiểm tra 1 hành động do form gửi lên, trả về bản SẠCH + dòng mô tả.
+
+        Dùng chung `core.build_action` với hộp thoại tkinter, nên hai giao diện không
+        thể bất đồng về việc thế nào là một hành động hợp lệ.
+        """
+        a, loi = core.build_action(draft or {})
+        if loi:
+            return {"ok": False, "error": loi}
+        return {"ok": True, "value": {"action": a, "display": core.action_display(a)}}
+
+    @_bat_loi
+    def describe_actions(self, actions):
+        """Dòng mô tả cho danh sách hành động bên trong 1 Loop/Nhóm."""
+        return {"ok": True, "value": [core.action_display(a) for a in (actions or [])]}
+
+    @_bat_loi
+    def describe_conditions(self, conds, kind="check_mod"):
+        """Dòng mô tả cho bảng điều kiện. `cond_display` biết cả tier lẫn thuần/hybrid,
+        `abyss_cond_display` biết ngưỡng số — JS đừng tự ghép lại mấy thứ đó."""
+        f = core.abyss_cond_display if kind == "abyss" else core.cond_display
+        return {"ok": True, "value": [f(c) for c in (conds or [])]}
+
+    @_bat_loi
+    def action_defaults(self, action_type):
+        """Giá trị mặc định khi đổi sang một loại hành động khác trong hộp thoại."""
+        return {"ok": True, "value": _hanh_dong_mac_dinh(action_type)}
 
     # ---------------- template ----------------
     @_bat_loi

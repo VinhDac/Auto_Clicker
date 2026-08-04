@@ -160,5 +160,80 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         core.app_dir = goc
 
+# ============================================================ §8 build_action
+print("§8 — build_action: luật hợp lệ dùng CHUNG cho tkinter và web")
+
+
+def ok_(ten, draft, kiem_them=None):
+    a, loi = core.build_action(draft)
+    if loi:
+        kiem(ten, False, f"-> {loi}")
+        return None
+    kiem(ten, kiem_them(a) if kiem_them else True, "" if not kiem_them else f"-> {a}")
+    return a
+
+
+def hong_(ten, draft, chua=""):
+    a, loi = core.build_action(draft)
+    kiem(ten, a is None and loi and (chua in loi), f"-> {loi!r}")
+
+
+P = [100, 200]
+ok_("left_click", {"type": "left_click", "point": P}, lambda a: a["point"] == P)
+ok_("right_click", {"type": "right_click", "point": P})
+ok_("mod_click", {"type": "mod_click", "point": P, "keys": "shift+ctrl", "button": "right"},
+    # thứ tự phím LUÔN theo MOD_KEYS, không theo thứ tự người dùng tick -> file ổn định
+    lambda a: a["keys"] == "ctrl+shift" and a["button"] == "right")
+ok_("key_press", {"type": "key_press", "key": " escape "}, lambda a: a["key"] == "escape")
+ok_("delay", {"type": "delay", "min_ms": "20", "max_ms": "50"},
+    lambda a: a["min_ms"] == 20 and a["max_ms"] == 50)
+ok_("move_wasd", {"type": "move_wasd", "keys": "a+w", "ms": "800"},
+    lambda a: a["keys"] == "w+a" and a["ms"] == 800)     # WASD_ORDER: dọc trước
+ok_("check_mod", {"type": "check_mod", "point": P, "conditions": [{"mod": "x", "tier": 1}]})
+# point=None hợp lệ ở check_mod: có thể chuột đã sẵn trên item
+ok_("check_mod không cần điểm", {"type": "check_mod", "point": None,
+                                 "conditions": [{"mod": "x"}]}, lambda a: a["point"] is None)
+ok_("abyss", {"type": "abyss", "frame": [1, 2, 3, 4], "conditions": [{"mod": "x"}],
+              "rerolls": 1, "wait_ms": 300})
+
+hong_("loại không có thật", {"type": "bay-bien"}, "không hợp lệ")
+hong_("click thiếu toạ độ", {"type": "left_click", "point": None}, "toạ độ")
+hong_("mod_click chưa tick phím", {"type": "mod_click", "point": P, "keys": ""}, "chưa tick phím")
+hong_("move_wasd chưa chọn hướng", {"type": "move_wasd", "keys": "", "ms": 500}, "chưa tick hướng")
+hong_("move_wasd 0ms", {"type": "move_wasd", "keys": "w", "ms": 0}, "lớn hơn 0")
+hong_("key_press bỏ trống", {"type": "key_press", "key": "  "}, "chưa nhập phím")
+hong_("key_press phím bịa", {"type": "key_press", "key": "khong-co-phim-nay"}, "không biết phím")
+hong_("delay max < min", {"type": "delay", "min_ms": 500, "max_ms": 100}, "không hợp lệ")
+hong_("check_mod chưa có điều kiện", {"type": "check_mod", "point": P, "conditions": []},
+      "chưa thêm điều kiện")
+hong_("abyss chưa căn khung", {"type": "abyss", "conditions": [{"mod": "x"}]}, "căn khung")
+hong_("abyss reroll quá lớn", {"type": "abyss", "frame": [1, 2, 3, 4],
+                               "conditions": [{"mod": "x"}], "rerolls": 999}, "reroll")
+
+# Tên là TUỲ CHỌN — chuỗi rỗng KHÔNG được ghi vào file, nếu không `action_display`
+# phải đi đoán xem có nên dùng nó không.
+a, _ = core.build_action({"type": "delay", "min_ms": 1, "max_ms": 2, "name": "   "})
+kiem("tên toàn khoảng trắng -> không ghi khoá name", "name" not in a)
+a, _ = core.build_action({"type": "delay", "min_ms": 1, "max_ms": 2, "name": " Nghỉ tay "})
+kiem("tên có nội dung -> cắt khoảng trắng rồi ghi", a.get("name") == "Nghỉ tay")
+
+# right_click nâng cao (lấy currency nhiều ô)
+a, loi = core.build_action({"type": "right_click", "point": P,
+                            "grid": {"frame": [1, 2, 3, 4], "cells": [[0, 0], [0, 1]]}})
+kiem("right_click + lưới", loi is None and len(a["grid"]["cells"]) == 2)
+hong_("bật lưới mà chưa căn", {"type": "right_click", "point": P,
+                               "grid": {"frame": None, "cells": []}}, "căn lưới")
+hong_("căn lưới mà chưa tick ô", {"type": "right_click", "point": P,
+                                  "grid": {"frame": [1, 2, 3, 4], "cells": []}}, "chưa tick ô")
+# Không bật lưới thì file lưu ra KHÔNG được có khoá thừa — template cũ phải giữ nguyên
+a, _ = core.build_action({"type": "right_click", "point": P})
+kiem("không bật lưới -> không có khoá grid", "grid" not in a)
+
+# api.save_action đi qua đúng con đường đó
+r = A.save_action({"type": "delay", "min_ms": 10, "max_ms": 20})
+kiem("api.save_action ok", r["ok"] and "Delay" in r["value"]["display"])
+r = A.save_action({"type": "key_press", "key": ""})
+kiem("api.save_action báo lỗi thay vì ném", r["ok"] is False and "chưa nhập phím" in r["error"])
+
 print(f"\n✔ KẾT QUẢ: {dung} đúng / {sai} sai")
 sys.exit(0 if sai == 0 else 1)

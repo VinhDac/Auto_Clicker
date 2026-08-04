@@ -1584,83 +1584,40 @@ class ActionEditor(tk.Toplevel):
         self.x_var.set(pt[0])
         self.y_var.set(pt[1])
 
-    def _save(self):
+    def _draft(self):
+        """Gom giá trị các ô nhập thành dict thô cho `core.build_action`.
+
+        Hộp thoại chỉ còn việc ĐỌC FORM. Luật hợp lệ nằm trong core, dùng chung với
+        giao diện web — sửa luật một chỗ là cả hai bên đổi theo."""
         t = self.type_var.get()
-        try:
-            if t == "check_mod":
-                if not self.conditions:
-                    raise ValueError("chưa thêm điều kiện mod nào")
-                try:
-                    x, y = int(self.x_var.get()), int(self.y_var.get())
-                    point = [x, y]
-                except ValueError:
-                    point = None
-                a = {"type": t, "point": point, "conditions": [dict(c) for c in self.conditions]}
-            elif t == "abyss":
-                if not self.abyss_frame:
-                    raise ValueError("chưa căn khung Abyss")
-                if not self.conditions:
-                    raise ValueError("chưa thêm điều kiện mod nào")
-                rr = int(self.rerolls_var.get())
-                if not 0 <= rr <= ABYSS_MAX_REROLLS:
-                    raise ValueError(f"số lần reroll phải từ 0 đến {ABYSS_MAX_REROLLS}")
-                wm = int(self.wait_var.get())
-                if wm < 0:
-                    raise ValueError("thời gian chờ không hợp lệ")
-                a = {"type": t,
-                     "frame": [int(v) for v in self.abyss_frame],
-                     "conditions": [dict(c) for c in self.conditions],
-                     "rerolls": rr, "wait_ms": wm,
-                     }
-                if self.excludes:          # rỗng thì không ghi, cho file gọn
-                    a["excludes"] = [dict(e) for e in self.excludes]
-            elif t == "mod_click":
-                keys = [k for k, v in (("ctrl", self.k_ctrl), ("shift", self.k_shift),
-                                       ("alt", self.k_alt)) if v.get()]
-                if not keys:
-                    raise ValueError("chưa tick phím nào cần giữ")
-                a = {"type": t,
-                     "point": [int(self.x_var.get()), int(self.y_var.get())],
-                     "keys": "+".join(keys),
-                     "button": "left" if self.button_var.get() == "Trái" else "right"}
-            elif t in POINT_TYPES:
-                if t == "right_click" and self.grid_on_var.get():
-                    if not self.grid_frame:
-                        raise ValueError("bật \"lấy từ nhiều ô\" thì phải căn lưới trước")
-                    if not self.grid_cells:
-                        raise ValueError("chưa tick ô nào trong lưới")
-                    a = {"type": t,
-                         "point": [int(self.x_var.get() or 0), int(self.y_var.get() or 0)],
-                         "grid": {"frame": [int(v) for v in self.grid_frame],
-                                  "cells": [[int(c[0]), int(c[1])] for c in self.grid_cells]}}
-                else:
-                    a = {"type": t, "point": [int(self.x_var.get()), int(self.y_var.get())]}
-            elif t == "move_wasd":
-                ks = self._wasd_keys()
-                if not ks:
-                    raise ValueError("chưa tick hướng đi nào")
-                ms = int(self.move_ms_var.get())
-                if ms <= 0:
-                    raise ValueError("thời gian giữ phải lớn hơn 0 ms")
-                a = {"type": t, "keys": "+".join(ks), "ms": ms}
-            elif t == "key_press":
-                k = self.key_var.get().strip()
-                if not k:
-                    raise ValueError("chưa nhập phím")
-                a = {"type": t, "key": k}
-            elif t == "delay":
-                lo, hi = int(self.min_var.get()), int(self.max_var.get())
-                if lo < 0 or hi < lo:
-                    raise ValueError("min/max không hợp lệ")
-                a = {"type": t, "min_ms": lo, "max_ms": hi}
-            else:
-                raise ValueError("loại không hợp lệ")
-        except ValueError as e:
-            messagebox.showerror("Lỗi", f"Giá trị không hợp lệ: {e}", parent=self)
+        d = {"type": t, "name": self.name_var.get(),
+             "point": [self.x_var.get(), self.y_var.get()]}
+        if t == "mod_click":
+            d["keys"] = "+".join(k for k, v in (("ctrl", self.k_ctrl), ("shift", self.k_shift),
+                                                ("alt", self.k_alt)) if v.get())
+            d["button"] = "left" if self.button_var.get() == "Trái" else "right"
+        elif t == "move_wasd":
+            d["keys"] = "+".join(self._wasd_keys())
+            d["ms"] = self.move_ms_var.get()
+        elif t == "key_press":
+            d["key"] = self.key_var.get()
+        elif t == "delay":
+            d["min_ms"], d["max_ms"] = self.min_var.get(), self.max_var.get()
+        elif t == "check_mod":
+            d["conditions"] = self.conditions
+        elif t == "abyss":
+            d.update(conditions=self.conditions, excludes=self.excludes,
+                     frame=self.abyss_frame, rerolls=self.rerolls_var.get(),
+                     wait_ms=self.wait_var.get())
+        elif t == "right_click" and self.grid_on_var.get():
+            d["grid"] = {"frame": self.grid_frame, "cells": self.grid_cells}
+        return d
+
+    def _save(self):
+        a, loi = core.build_action(self._draft())
+        if loi:
+            messagebox.showerror("Lỗi", f"Giá trị không hợp lệ: {loi}", parent=self)
             return
-        nm = self.name_var.get().strip()
-        if nm:                      # để trống -> không lưu trường name, dùng mô tả tự sinh
-            a["name"] = nm
         self.result = a
         self.destroy()
 

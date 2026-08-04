@@ -7,9 +7,11 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import { py, cho_cau_noi } from './api'
-import type { Card, ProcEdge, Problem, ProcessDoc, Step, StepKind } from './types'
+import type { Bootstrap, Card, ProcEdge, Problem, ProcessDoc, Step, StepKind } from './types'
 import Ribbon from './components/Ribbon'
 import StepNode from './components/StepNode'
+import StepDialog from './components/StepDialog'
+import ActionDialog from './components/ActionDialog'
 
 const nodeTypes = { buoc: StepNode }
 
@@ -77,6 +79,10 @@ function Ung() {
   const [nhatKy, setNhatKy] = useState<string[]>([])
   const [sanSang, setSanSang] = useState(false)
   const [trangThai, setTrangThai] = useState('đang khởi động…')
+  const [boot, setBoot] = useState<Bootstrap | null>(null)
+  const [mods, setMods] = useState<string[]>([])
+  /** Bước đang mở hộp thoại. Loop/Nhóm mở StepDialog, HĐ lẻ mở thẳng ActionDialog. */
+  const [dangSua, setDangSua] = useState<string | null>(null)
   const { fitView, zoomIn, zoomOut, getZoom } = useReactFlow()
 
   const lui = useRef<Anh[]>([])
@@ -127,6 +133,10 @@ function Ung() {
         await cho_cau_noi()
         const b = await py.bootstrap()
         if (!b.ok) { setTrangThai('lỗi bootstrap: ' + b.error); return }
+        setBoot(b.value!)
+        // Nạp cả 3223 mod MỘT lần rồi lọc trong JS. Lọc ở Python theo từng phím gõ
+        // thì mỗi ký tự là một vòng promise; đo được cả danh sách chỉ mất 7ms.
+        py.get_mods().then(r => r.ok && setMods(r.value ?? []))
         const ds = await py.list_templates('process')
         const co = (ds.ok && (ds.value?.length ?? 0) > 0)
         const r = co ? await py.load_process(ds.value![0]) : await py.demo_process()
@@ -210,6 +220,19 @@ function Ung() {
     }])
     ghi('nhân bản khối')
   }, [dangChon, chup, setNodes, ghi])
+
+  /** Ghi bước đã sửa trở lại node, và LẤY LẠI nội dung hộp từ Python — không tự dựng
+   *  lại thẻ ở JS, nếu không hộp sẽ mô tả khác với những gì core thực sự hiểu. */
+  const ghiBuoc = useCallback(async (s: Step) => {
+    const r = await py.describe([s])
+    const card = r.ok ? r.value![0] : null
+    chup()
+    setNodes(ds => ds.map(k => (k.id === s.id
+      ? { ...k, data: { step: s, card: card ?? (k.data as { card: Card }).card } }
+      : k)))
+    setDangSua(null)
+    ghi(`sửa "${card?.title ?? s.name ?? s.id}"`)
+  }, [chup, setNodes, ghi])
 
   const luu = useCallback(async () => {
     const t = window.prompt('Lưu Process với tên:', ten)
@@ -301,6 +324,7 @@ function Ung() {
           onConnect={noi}
           onNodeDragStart={batDauKeo}
           onNodeDragStop={ketThucKeo}
+          onNodeDoubleClick={(_, n) => setDangSua(n.id)}
           nodeTypes={nodeTypes}
           connectionMode={ConnectionMode.Loose}
           proOptions={{ hideAttribution: true }}
@@ -361,6 +385,20 @@ function Ung() {
         <span className="so">{Math.round(getZoom() * 100)}%</span>
         <button className="nut-nho" onClick={() => zoomIn()}>+</button>
       </div>
+
+      {dangSua && boot && (() => {
+        const n = nodes.find(k => k.id === dangSua)
+        if (!n) return null
+        const st = (n.data as { step: Step }).step
+        // HĐ lẻ chính LÀ một hành động -> mở thẳng hộp thoại hành động, khỏi bắt
+        // người dùng đi qua một lớp "danh sách 1 phần tử" vô nghĩa.
+        return st.kind === 'action'
+          ? <ActionDialog action={st as Record<string, any>} boot={boot} mods={mods}
+                          onDong={() => setDangSua(null)}
+                          onLuu={a => ghiBuoc({ ...a, kind: 'action', id: st.id, pos: st.pos } as Step)} />
+          : <StepDialog step={st} boot={boot} mods={mods}
+                        onDong={() => setDangSua(null)} onLuu={ghiBuoc} />
+      })()}
     </div>
   )
 }

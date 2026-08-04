@@ -210,8 +210,21 @@ App tkinter cũ **chạy được suốt P0–P3**. Đây là điều lần trư
     `(tên, đường_dẫn)` chứ không phải tên — trả thẳng sang JS là vừa sai kiểu vừa lộ
     đường dẫn đĩa; và `new_step("action")` tạo hành động thiếu `point` làm
     `action_summary` nổ `KeyError`. Cả hai lọt qua mắt, chỉ test mới thấy
-- **P2 — 7 hộp thoại**, dựng lại y hệt bố cục 10 ảnh trong
-  `Ảnh những phần ở giao diện app cũ mà tôi thích/`
+- **P2 — Hộp thoại** ✅ **XONG**
+  - ✅ **`core.build_action(draft)` — luật hợp lệ của 8 loại hành động đã rút khỏi
+    `ActionEditor._save` về core.** Hộp thoại tkinter giờ chỉ còn đọc form rồi gọi hàm
+    đó; hộp thoại web gọi đúng hàm đó qua `api.save_action`. Sửa luật một chỗ, hai
+    giao diện đổi theo
+  - ✅ `ActionDialog` (8 loại) + `StepDialog` (Loop/Nhóm) dựng lại đúng thứ tự trường,
+    chữ nhãn và chữ gợi ý của bản tkinter. Double-click hộp trên canvas để mở
+  - ✅ Ba overlay nối vào: 🎯 Chọn điểm · 🖼 Căn khung Abyss · 🖼 Căn lưới
+  - ✅ Mô tả hành động và mô tả điều kiện đều do Python sinh
+    (`action_display` / `cond_display` / `abyss_cond_display`)
+  - ✅ Bộ test §8 cho `build_action`: 8 loại hợp lệ + 12 đường lỗi.
+    **Tổng: 558 check / 14 bài, tất cả xanh**
+  - **Hai lớp lỗi của bản tkinter biến mất theo kiến trúc**, không phải nhờ sửa:
+    hộp thoại "loé" lúc mở (web dựng xong mới vẽ) và `ttk.Combobox` chiếm grab toàn
+    cục làm treo cả máy (web không có khái niệm grab)
 - **P3 — Nối 3 overlay + nút Chạy/Dừng + nhật ký + đóng gói.** Tới đây app dùng được thật
 - **P4 — Theme sáng**, rồi mới tới **rẽ nhánh check_mod**
 

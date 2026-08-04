@@ -1061,6 +1061,122 @@ def is_valid_key(k):
         return True          # không kiểm được thì đừng chặn oan người dùng
 
 
+def build_action(d):
+    """Nhận dữ liệu thô từ MỘT form bất kỳ -> (action hợp lệ, None) hoặc (None, "lý do").
+
+    Luật hợp lệ của 8 loại hành động nằm ở ĐÂY, không nằm trong form. Trước đây chúng
+    nằm rải trong `ActionEditor._save` của bản tkinter; giao diện web mà chép lại thì
+    hai bên chắc chắn trôi khỏi nhau — sửa luật một bên, bên kia vẫn cho lưu dữ liệu hỏng.
+
+    `d` gần đúng hình dạng action rồi, cộng thêm vài cờ chỉ có ở form:
+        point / keys / button / ms / key / min_ms / max_ms / conditions / excludes /
+        frame / rerolls / wait_ms / grid / name
+    Trả về dict SẠCH: không có khoá thừa, không có khoá rỗng.
+    """
+    t = d.get("type")
+    if t not in ACTION_TYPES:
+        return None, f'loại hành động không hợp lệ: "{t}"'
+
+    def so(khoa, mac_dinh=None, bat_buoc=True, ten=None):
+        v = d.get(khoa, mac_dinh)
+        if v is None or v == "":
+            if bat_buoc:
+                raise ValueError(f"thiếu {ten or khoa}")
+            return None
+        return int(v)
+
+    def diem(bat_buoc=True):
+        p = d.get("point")
+        if not p or len(p) != 2 or p[0] is None or p[1] is None or p[0] == "" or p[1] == "":
+            if bat_buoc:
+                raise ValueError("chưa có toạ độ X/Y")
+            return None
+        return [int(p[0]), int(p[1])]
+
+    try:
+        if t == "check_mod":
+            conds = [dict(c) for c in (d.get("conditions") or [])]
+            if not conds:
+                return None, "chưa thêm điều kiện mod nào"
+            # point=None là HỢP LỆ ở đây: có thể chuột đã sẵn trên item rồi.
+            a = {"type": t, "point": diem(bat_buoc=False), "conditions": conds}
+
+        elif t == "abyss":
+            if not d.get("frame"):
+                return None, "chưa căn khung Abyss"
+            conds = [dict(c) for c in (d.get("conditions") or [])]
+            if not conds:
+                return None, "chưa thêm điều kiện mod nào"
+            rr = so("rerolls", ABYSS_DEFAULT_REROLLS)
+            if not 0 <= rr <= ABYSS_MAX_REROLLS:
+                return None, f"số lần reroll phải từ 0 đến {ABYSS_MAX_REROLLS}"
+            wm = so("wait_ms", ABYSS_DEFAULT_WAIT_MS)
+            if wm < 0:
+                return None, "thời gian chờ không hợp lệ"
+            a = {"type": t, "frame": [int(v) for v in d["frame"]],
+                 "conditions": conds, "rerolls": rr, "wait_ms": wm}
+            if d.get("excludes"):        # rỗng thì không ghi, cho file gọn
+                a["excludes"] = [dict(e) for e in d["excludes"]]
+
+        elif t == "mod_click":
+            keys = [k for k in MOD_KEYS if k in parse_hold_keys(d.get("keys"))]
+            if not keys:
+                return None, "chưa tick phím nào cần giữ"
+            a = {"type": t, "point": diem(), "keys": "+".join(keys),
+                 "button": "right" if d.get("button") == "right" else "left"}
+
+        elif t in POINT_TYPES:
+            g = d.get("grid") or None
+            if t == "right_click" and g:
+                if not g.get("frame"):
+                    return None, 'bật "lấy từ nhiều ô" thì phải căn lưới trước'
+                if not g.get("cells"):
+                    return None, "chưa tick ô nào trong lưới"
+                a = {"type": t, "point": diem(bat_buoc=False) or [0, 0],
+                     "grid": {"frame": [int(v) for v in g["frame"]],
+                              "cells": [[int(c[0]), int(c[1])] for c in g["cells"]]}}
+            else:
+                a = {"type": t, "point": diem()}
+
+        elif t == "move_wasd":
+            ks = wasd_sort(parse_hold_keys(d.get("keys")))
+            if not ks:
+                return None, "chưa tick hướng đi nào"
+            ms = so("ms", MOVE_DEFAULT_MS)
+            if ms <= 0:
+                return None, "thời gian giữ phải lớn hơn 0 ms"
+            a = {"type": t, "keys": "+".join(ks), "ms": ms}
+
+        elif t == "key_press":
+            k = str(d.get("key") or "").strip()
+            if not k:
+                return None, "chưa nhập phím"
+            if not is_valid_key(k):
+                return None, f'pyautogui không biết phím "{k}"'
+            a = {"type": t, "key": k}
+
+        elif t == "delay":
+            lo, hi = so("min_ms", 0), so("max_ms", 0)
+            if lo < 0 or hi < lo:
+                return None, "min/max không hợp lệ"
+            a = {"type": t, "min_ms": lo, "max_ms": hi}
+
+        else:
+            return None, f'chưa hỗ trợ loại "{t}"'
+
+    except (ValueError, TypeError) as e:
+        return None, str(e) if str(e).startswith(("thiếu", "chưa")) else f"giá trị không phải số ({e})"
+
+    # Tên là TUỲ CHỌN: để trống thì dùng mô tả tự sinh. Ghi chuỗi rỗng vào file chỉ
+    # tổ làm action_display phải đi đoán xem có nên dùng nó không.
+    ten = str(d.get("name") or "").strip()
+    if ten:
+        a["name"] = ten
+    if d.get("id"):
+        a["id"] = d["id"]
+    return a, None
+
+
 def action_display(a):
     """Chuỗi hiện trong danh sách. Tên tự đặt (nếu có) đứng trước, KÈM THEO phần mô
     tả kỹ thuật tự sinh — không thay thế, để vẫn thấy toạ độ/thông số mà kiểm tra."""

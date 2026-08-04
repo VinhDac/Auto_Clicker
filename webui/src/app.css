@@ -289,3 +289,113 @@ input, textarea { user-select: text; }
 }
 .thanh-trang-thai .day { flex: 1; }
 .thanh-trang-thai .so { color: var(--text); }
+
+/* ============================ Hộp thoại ============================ */
+.lop-phu {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, .55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px;
+  overflow: auto;
+}
+.hop-thoai {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 80px);
+}
+.ht-dau {
+  display: flex; align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.ht-dau span { flex: 1; }
+.ht-dong {
+  background: none; border: none; color: var(--muted);
+  font-size: 15px; cursor: pointer; padding: 2px 8px; border-radius: 4px; line-height: 1;
+}
+.ht-dong:hover { background: var(--err); color: #fff; }
+.ht-than { padding: 12px 14px; overflow: auto; flex: 1; }
+.ht-chan {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, .12);
+}
+.ht-chan .day { flex: 1; }
+.loi-chan { color: var(--err); font-size: 12.5px; }
+
+/* --- các ô trong hộp thoại --- */
+.hang { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.hang.rong { display: block; }
+.hang.rong .nhan-o { display: block; margin-bottom: 3px; }
+.nhan-o { color: var(--text); font-size: 12.5px; white-space: nowrap; }
+.nhan-o.phu { margin-left: 12px; color: var(--muted); }
+
+.o {
+  background: var(--field);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font: 12.5px var(--font);
+  outline: none;
+  transition: border-color .12s;
+}
+.o:focus { border-color: var(--accent); }
+.o:disabled { opacity: .45; }
+.o.so { width: 78px; }
+.o.day { width: 100%; }
+select.o { cursor: pointer; }
+
+.day-ngang { width: 100%; margin-bottom: 8px; }
+.goi-y { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 2px 0 10px; }
+.vach { border: none; border-top: 1px solid var(--border-soft); margin: 10px 0; }
+.bao-loi {
+  color: var(--err); font-size: 12px; margin: 6px 0 8px;
+  border-left: 2px solid var(--err); padding-left: 8px;
+}
+.tieu-de-phu { color: var(--text); font-size: 12.5px; margin: 10px 0 4px; }
+.mo { color: var(--dim); font-size: 11.5px; }
+
+.tick { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 8px; cursor: pointer; }
+.tick.ngang { margin-bottom: 0; margin-right: 12px; }
+.tick input { accent-color: var(--accent); cursor: pointer; }
+.tick.wasd { display: inline-flex; margin: 0 6px 0 0; }
+.ban-phim-wasd { display: flex; flex-direction: column; gap: 3px; }
+.ban-phim-wasd > div:first-child { padding-left: 34px; }
+
+/* --- danh sách (thay tk.Listbox) --- */
+.danh-sach {
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  font: 12px/1.6 var(--mono);
+}
+.danh-sach.cao-4 { height: 92px; }
+.danh-sach.cao-5 { height: 116px; }
+.danh-sach.cao-10 { height: 236px; }
+.danh-sach .muc {
+  padding: 2px 8px; cursor: default;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.danh-sach .muc:hover { background: var(--raised); }
+/* Chọn = thanh accent bên trái + nền nhạt, KHÔNG tô cả dòng màu accent: màu no
+   trải rộng trên nền tối bị rung mắt (đúng lỗi đã gặp ở bản tkinter). */
+.danh-sach .muc.chon {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.danh-sach .muc.mo { color: var(--dim); font-style: italic; font-family: var(--font); }
+.danh-hd { display: inline-block; width: 20px; color: var(--dim); font-size: 10px; }
+
+.khung-hd { display: flex; gap: 8px; align-items: stretch; }
+.khung-hd .danh-sach { flex: 1; min-width: 0; }
+.cot-nut { display: flex; flex-direction: column; gap: 4px; width: 118px; flex: 0 0 auto; }
+.cot-nut .nut { width: 100%; text-align: left; }
+.hang.khong-xuong-dong { flex-wrap: nowrap; }
+.o.co-gian { flex: 1 1 auto; min-width: 120px; }

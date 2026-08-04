@@ -54,5 +54,19 @@ export const py = {
     goi<{ step: Step; card: Card }>('new_step', kind, actionType),
   describe: (steps: Step[]) => goi<Card[]>('describe', steps),
   validate: (steps: Step[]) => goi<Problem[]>('validate', steps),
+
+  // --- hộp thoại hành động ---
+  save_action: (draft: Record<string, unknown>) =>
+    goi<{ action: Record<string, unknown>; display: string }>('save_action', draft),
+  describe_actions: (actions: unknown[]) => goi<string[]>('describe_actions', actions),
+  describe_conditions: (conds: unknown[], kind = 'check_mod') =>
+    goi<string[]>('describe_conditions', conds, kind),
+  action_defaults: (t: string) => goi<Record<string, unknown>>('action_defaults', t),
+  get_mods: (game?: string) => goi<string[]>('get_mods', game ?? null),
+
+  // --- 3 overlay chọn trên màn hình (chạy tiến trình con tkinter) ---
   pick_point: () => goi<[number, number]>('pick_point'),
+  pick_abyss_frame: (frame?: number[] | null) => goi<number[]>('pick_abyss_frame', frame ?? null),
+  pick_inv_grid: (frame?: number[] | null, cells?: number[][] | null) =>
+    goi<{ frame: number[]; cells: number[][] }>('pick_inv_grid', frame ?? null, cells ?? null),
 }
