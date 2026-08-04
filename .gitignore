@@ -15,6 +15,10 @@ venv/
 settings.json
 templates/
 
+# ===== Giao diện web (P0+) =====
+webui/node_modules/
+webui/dist/
+
 # ===== Linh tinh =====
 *.bundle
 *.log

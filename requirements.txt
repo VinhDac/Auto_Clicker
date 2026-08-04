@@ -3,6 +3,15 @@ keyboard
 pyperclip
 plyer
 
+# Giao diện web mới (app_web.py). Mượn WebView2 có sẵn của Windows nên không kéo
+# theo trình duyệt nào. Bản tkinter cũ (auto_clicker_gui.py) KHÔNG cần gói này.
+#
+# ⚠ PHẢI cài trong venv riêng của dự án (.venv), đừng cài vào Python global:
+#   gói `quantconnect-stubs` (nếu máy có) chiếm namespace `Microsoft` và làm
+#   pywebview chết ngay lúc khởi động với
+#   "System.IO.FileNotFoundException: Could not load file or assembly 'Microsoft'".
+pywebview
+
 # Chỉ cần cho hành động "🌀 Abyss": chụp màn hình + OCR bằng Windows.Media.Ocr
 # (có sẵn trong Windows 10/11, chạy offline, không phải cài chương trình ngoài).
 # Thiếu mấy gói này thì app vẫn chạy bình thường, riêng Abyss bị tắt và báo rõ lý do.

@@ -34,6 +34,7 @@ AN_TOAN = [
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.
 CHUOT_THAT = [
     ("test_modclick_chuot_that.py", "Chạy thật mod_click bằng chuột thật (~30s)"),
+    ("test_overlay_tien_trinh_con.py", "Overlay chạy tiến trình con cho giao diện web (~8s)"),
 ]
 
 
