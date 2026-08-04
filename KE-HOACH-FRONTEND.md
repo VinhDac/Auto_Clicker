@@ -246,7 +246,51 @@ App tkinter cũ **chạy được suốt P0–P3**. Đây là điều lần trư
     chuột thật, vẫn chạy bộ máy thật. **Tổng: 582 check / 15 bài, tất cả xanh**
   - **Đo được:** overlay sẵn sàng ~1s ở CẢ bản nguồn lẫn bản đóng gói — không có độ
     trễ nào do tách tiến trình
-- **P4 — Theme sáng**, rồi mới tới **rẽ nhánh check_mod**
+- **P3.5 — Đuổi kịp bản tkinter** ✅ **XONG** (sinh ra sau một cuộc audit thất bại)
+  - ✅ **Bộ máy chạy theo ĐƯỜNG NỐI.** Trước đó `_run_inner` duyệt
+    `enumerate(steps)` và chưa từng đọc `edges` → canvas vẽ C→A→B mà app chạy A→B→C.
+    Đã tách `_chay_mot_buoc()` ra khỏi vòng duyệt, thêm `flow_map` / `flow_entry` /
+    `flow_order` / `validate_flow_graph` + `MAX_PROCESS_STEPS` chặn vòng vô tận
+  - ✅ **Số thứ tự chạy ở góc khối**, tính bằng CHÍNH `flow_order` mà bộ máy dùng —
+    con số không thể nói khác việc app làm. Khối không có đường dẫn tới hiện viền
+    đứt + dấu `–`
+  - ✅ Soát đồ thị: 2 đường ra cùng cổng (lỗi) · không có bước bắt đầu (lỗi) ·
+    bước không bao giờ chạy tới (cảnh báo)
+  - ✅ ⚙ Cài đặt (game, delay, phím copy, phím dừng, màu nhấn đổi-là-thấy-ngay,
+    ⟳ cập nhật mod từ mạng)
+  - ✅ 💾 Lưu ▾ / 📂 Mở ▾ đầy đủ + `TemplatePicker` — thay hết `window.prompt`
+  - ✅ 👁 Xem điểm (thêm mode `review` cho `overlays.py`, dùng lại `ReviewOverlay`)
+  - ✅ Chọn nhiều + Ctrl+C/Ctrl+V + kéo-thả trong bảng hành động; bấm dòng ⚠ Vấn đề
+    để nhảy tới khối
+  - **Tổng: 596 check / 15 bài, tất cả xanh**
+  - **Lỗi test bắt được:** bước thiếu `id` bị phép duyệt đồ thị bỏ qua → Process
+    **im lặng không chạy gì**. Đã vá bằng `ensure_step_ids` ngay trước khi duyệt
+  - **Ghi chú Ctrl+C/V**: dùng bộ nhớ trong app, KHÔNG dùng clipboard hệ điều hành —
+    clipboard thật đang phục vụ luồng đọc chữ item, trộn vào là có ngày dán nhầm cả
+    một item PoE vào danh sách hành động
+
+- **P4 — Audit + Dọn dẹp** ✅ **XONG**
+  - ✅ **Sửa lỗi "Not Responding"** — app mở ra là treo, không traceback, 0% CPU.
+    Nguyên nhân: `api.window = <Window>`. pywebview dựng danh sách hàm cho JS bằng
+    `get_functions()` (`webview/util.py:190`) — nó duyệt `dir(js_api)` và **đệ quy vào
+    mọi thuộc tính không callable**; chạm vào `Window` là đọc các property
+    `width`/`x`/`title`, những thứ hỏi ngược luồng giao diện đang bị chặn để chờ →
+    deadlock. Luật mới: **mọi thuộc tính không-phải-hàm của `Api` phải có tiền tố `_`**
+  - ✅ **Checklist UI/UX 36 mục đối chiếu bản tkinter → đủ 36/36.** 7 mục thiếu đã bổ
+    sung: nút Sửa · Đặt làm bước bắt đầu · Lưu ra file khác · Mở từ file khác ·
+    Duyệt file khác · phím Delete ở bảng điều kiện · kéo-thả điều kiện
+  - ✅ **`tests/test_e2e_web.py`** — mở app THẬT, thao tác THẬT, sau mỗi bước hỏi
+    Windows `SendMessageTimeout(WM_NULL)` xem cửa sổ còn bơm thông điệp không.
+    **Đã mutation-test**: tái hiện lỗi cũ thì bài này đỏ 8 chỗ
+  - ✅ **Dọn**: `auto_clicker_gui.py` (3142 dòng) → tách 846 dòng còn dùng thành
+    `overlay_ui.py` (4 overlay + theme), xoá phần còn lại. Xoá 7 bộ test chỉ phục vụ
+    giao diện đã mất; 4 bộ khác cắt riêng phần giao diện, giữ nguyên phần lõi.
+    Xoá `p0_probe.html`, 3 file `.spec`, zip cũ, `tools/build.bat` của bản tkinter.
+    Ảnh mẫu về `tests/anh/`
+  - **Test: 325 check / 9 bài (nhóm an toàn) + 22 check / 2 bài chuột thật.** Tất cả xanh
+  - **Đóng gói: 41MB, Defender quét sạch**
+
+- **Tiếp theo — Theme sáng**, rồi **rẽ nhánh check_mod**
 
 ---
 

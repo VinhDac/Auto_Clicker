@@ -50,10 +50,28 @@ export const py = {
   save_process: (ten: string, steps: Step[], edges: ProcEdge[], start_delay: number) =>
     goi<{ path: string; name: string }>('save_process', ten, steps, edges, start_delay),
   list_templates: (kind = 'process') => goi<string[]>('list_templates', kind),
+  // --- cài đặt ---
+  save_settings: (s: Record<string, unknown>) => goi<Record<string, unknown>>('save_settings', s),
+  update_mods: (game?: string) => goi<{ game: string; so_luong: number }>('update_mods', game ?? null),
+
+  // --- template Loop / Nhóm ---
+  delete_template: (kind: string, ten: string) => goi<null>('delete_template', kind, ten),
+  save_step_template: (kind: string, ten: string, step: Step) =>
+    goi<{ name: string }>('save_step_template', kind, ten, step),
+  insert_step_template: (kind: string, ten: string) =>
+    goi<{ step: Step; card: Card }>('insert_step_template', kind, ten),
+  review_points: (steps: Step[]) => goi<boolean>('review_points', steps),
+
+  // --- mở / lưu ra file bất kỳ (hộp thoại file native) ---
+  open_process_file: () => goi<ProcessDoc>('open_process_file'),
+  save_process_file: (ten: string, steps: Step[], edges: ProcEdge[], sd: number) =>
+    goi<{ path: string }>('save_process_file', ten, steps, edges, sd),
+  insert_step_file: (kind: string) => goi<{ step: Step; card: Card }>('insert_step_file', kind),
+
   new_step: (kind: string, actionType = 'left_click') =>
     goi<{ step: Step; card: Card }>('new_step', kind, actionType),
   describe: (steps: Step[]) => goi<Card[]>('describe', steps),
-  validate: (steps: Step[]) => goi<Problem[]>('validate', steps),
+  validate: (steps: Step[], edges: ProcEdge[]) => goi<Problem[]>('validate', steps, edges),
 
   // --- hộp thoại hành động ---
   save_action: (draft: Record<string, unknown>) =>

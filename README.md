@@ -83,19 +83,30 @@ App **không** gửi dữ liệu đi đâu. Toàn bộ mã nguồn nằm ngay tr
 
 ## Tự build từ mã nguồn
 
-Cần Python 3.10+ trên Windows.
+Cần **Python 3.10+** và **Node.js 18+** trên Windows.
 
 ```bash
 git clone https://github.com/VinhDac/Auto_Clicker.git
 cd Auto_Clicker
-tools\setup.bat          # cài thư viện
-python auto_clicker_gui.py
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+cd webui && npm install && npm run build && cd ..
+.venv\Scripts\python.exe app_web.py
 ```
+
+> Dùng **venv riêng**, đừng cài vào Python global: nếu máy có gói `quantconnect-stubs`
+> thì nó chiếm namespace `Microsoft` và pywebview chết ngay lúc khởi động.
 
 Đóng gói thành `.exe`:
 
 ```bash
-tools\build.bat          # kết quả ở dist\AutoClicker.exe
+tools\build.bat          # kết quả ở dist\AutoClickerWeb\
+```
+
+Chạy test:
+
+```bash
+.venv\Scripts\python.exe tests\chay_tat_ca.py
 ```
 
 Cập nhật danh sách mod từ Trade API:
@@ -110,15 +121,31 @@ python update_mods.py poe2       # chỉ PoE2
 ## Cấu trúc dự án
 
 ```
-auto_clicker_gui.py    giao diện (tkinter)
-core.py                lõi — không phụ thuộc giao diện, chạy headless được
-update_mods.py         tải danh sách mod từ Trade API chính thức
-data/                  mods_poe1.txt, mods_poe2.txt
-tools/                 build.bat, setup.bat
-docs/                  tài liệu ý tưởng ban đầu
+core.py             lõi — không phụ thuộc giao diện, chạy headless được
+api.py              bề mặt DUY NHẤT giao diện web gọi tới  (JS → api.py → core.py)
+app_web.py          khởi động cửa sổ (pywebview + WebView2)
+webui/              giao diện: React + TypeScript + React Flow
+overlay_ui.py       4 overlay tkinter phủ màn hình (chọn điểm, căn khung, căn lưới)
+overlays.py         chạy 4 overlay đó như tiến trình con
+update_mods.py      tải danh sách mod từ Trade API chính thức
+data/               mods_poe1.txt, mods_poe2.txt
+tests/              bộ test  ·  tests/anh/ là ảnh mẫu chụp từ game
+tools/              build.bat, setup.bat, chay_test.bat
+docs/               tài liệu ý tưởng ban đầu
 ```
 
-`core.py` chứa toàn bộ logic (đọc/so khớp mod, mô hình Process, bộ máy chạy) và **không import tkinter** — nên test được mà không cần mở cửa sổ, và đổi giao diện sau này không phải viết lại lõi.
+**Ba tầng, mỗi tầng biết đúng việc của mình:**
+
+- `core.py` giữ toàn bộ logic (đọc/so khớp mod, mô hình Process, bộ máy chạy) và
+  **không import tkinter** — test được mà không cần mở cửa sổ nào.
+- `api.py` là chỗ duy nhất giao diện gọi tới. Giao diện **không bao giờ tự biết định
+  dạng file**; nó chỉ gửi/nhận JSON. Nhờ vậy đổi định dạng chỉ phải sửa một nơi.
+- `webui/` chỉ lo hiển thị. Ngay cả dòng mô tả hành động cũng do Python sinh
+  (`core.action_display`), để hai bên không thể nói khác nhau.
+
+**Vì sao 4 overlay vẫn là tkinter:** chúng là cửa sổ trong suốt phủ lên cửa sổ game để
+bắt click và đọc pixel — WebView2 không làm được. Chúng chạy trong **tiến trình con**
+vì tkinter và pywebview mỗi bên đòi một vòng lặp sự kiện riêng.
 
 Dữ liệu của bạn (`settings.json`, thư mục `templates/`) sinh ra cạnh file exe khi chạy, không nằm trong repo.
 

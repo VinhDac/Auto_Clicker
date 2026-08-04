@@ -1,7 +1,7 @@
 """Điểm khởi động giao diện WEB (pywebview + WebView2).
 
-Chạy song song với `auto_clicker_gui.py` (bản tkinter). App cũ KHÔNG bị đụng tới —
-lúc nào cũng chạy được, cho tới khi bản web đủ tính năng.
+Giao diện chính của app: React + React Flow trong WebView2, Python lo phần lõi.
+Bốn overlay phủ màn hình vẫn là tkinter, chạy ở tiến trình con (xem overlays.py).
 
     python app_web.py            # mở giao diện web
     python app_web.py --overlay point   # nội bộ: bật overlay chọn điểm
@@ -28,11 +28,9 @@ from api import Api                               # noqa: E402
 
 
 def duong_dan_giao_dien():
-    """Ưu tiên bản đã build (P1 trở đi), chưa có thì dùng trang thăm dò của P0."""
-    dist = os.path.join(HERE, "webui", "dist", "index.html")
-    if os.path.exists(dist):
-        return dist
-    return os.path.join(HERE, "webui", "p0_probe.html")
+    """Trang giao diện đã build. Chưa build thì báo rõ phải chạy npm chứ không mở
+    một cửa sổ trắng rồi để người dùng tự đoán."""
+    return os.path.join(HERE, "webui", "dist", "index.html")
 
 
 def thanh_tieu_de_toi(tieu_de):
@@ -70,7 +68,8 @@ def thanh_tieu_de_toi(tieu_de):
 def main():
     trang = duong_dan_giao_dien()
     if not os.path.exists(trang):
-        print(f"Không tìm thấy giao diện: {trang}", file=sys.stderr)
+        print("Chưa build giao diện. Chạy:  cd webui && npm install && npm run build",
+              file=sys.stderr)
         return 1
 
     TIEU_DE = "Auto Clicker — PoE2"
@@ -84,7 +83,9 @@ def main():
         background_color="#202020",       # tránh chớp trắng trước khi CSS kịp chạy
     )
     # Api cần cửa sổ để ĐẨY nhật ký chạy ngược về JS (JS không hỏi liên tục được).
-    api.window = win
+    # Đặt tên có '_': pywebview đệ quy vào thuộc tính công khai của js_api
+    # và sẽ treo cứng nếu chạm vào đối tượng Window (xem chú thích trong api.py).
+    api._window = win
     # Đóng cửa sổ giữa lúc đang chạy: phải dừng worker, thả phím đang giữ và gỡ phím
     # dừng toàn cục — nếu không Shift kẹt trong cả Windows sau khi tắt app.
     win.events.closing += api.dong_app

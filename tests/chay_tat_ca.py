@@ -18,16 +18,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 AN_TOAN = [
     ("test_abyss_ocr.py", "Abyss: OCR + dò nút refresh trên ảnh mẫu thật"),
     ("test_abyss_luong_chay.py", "Abyss: luồng reveal/reroll/confirm, thứ tự click"),
-    ("test_abyss_giao_dien.py", "Abyss: hộp thoại, căn khung, lưu/mở template"),
     ("test_abyss_loai_tru.py", "Abyss: danh sách loại trừ, cấm hết thì dừng"),
     ("test_luoi_inventory.py", "Lấy currency nhiều ô: dò ô còn/hết trên ảnh kho thật"),
     ("test_di_chuyen.py", "Di chuyển WASD: giữ đúng phím, luôn thả, không tổ hợp sai"),
     ("test_giu_shift.py", "Giữ Shift suốt Loop + gia cố mod_click"),
-    ("test_hop_thoai_hanh_dong.py", "Hộp thoại hành động: không widget nào chiếm grab"),
-    ("test_them_hanh_dong.py", "Thêm/sửa/xoá/copy hành động qua nhiều Loop"),
-    ("test_chon_buoc_chuot.py", "Chọn bước & kéo-thả bằng chuột (sự kiện giả)"),
-    ("test_phim_tat.py", "Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả"),
-    ("test_nhom_hd.py", "Nhóm HĐ 1 lần: khung dùng chung, chạy 1 lượt, template"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
     ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
@@ -35,8 +29,8 @@ AN_TOAN = [
 
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.
 CHUOT_THAT = [
-    ("test_modclick_chuot_that.py", "Chạy thật mod_click bằng chuột thật (~30s)"),
     ("test_overlay_tien_trinh_con.py", "Overlay chạy tiến trình con cho giao diện web (~8s)"),
+    ("test_e2e_web.py", "E2E: app web thật còn phản hồi sau mỗi thao tác (~25s)"),
 ]
 
 

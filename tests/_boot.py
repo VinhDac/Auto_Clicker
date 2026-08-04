@@ -1,13 +1,13 @@
 """Đặt đường dẫn cho các bài test.
 
 Import module này ĐẦU TIÊN trong mỗi bài test. Nó làm 2 việc:
-  1. đưa thư mục gốc dự án vào sys.path  -> import được core / auto_clicker_gui
+  1. đưa thư mục gốc dự án vào sys.path  -> import được core / api / overlay_ui
   2. chuyển thư mục làm việc về gốc dự án -> mở được data/mods_poe2.txt,
-     abyss_sample.png... dù bạn chạy test từ đâu
+     tests/anh/*.png... dù bạn chạy test từ đâu
 
 Nhờ vậy chạy kiểu nào cũng được:
     python tests\\test_them_hanh_dong.py
-    cd tests && python test_them_hanh_dong.py
+    cd tests && python test_do_thi_va_api.py
 """
 import os
 import sys

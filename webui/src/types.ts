@@ -67,6 +67,8 @@ export interface Bootstrap {
   mod_keys: string[]
   hybrid_labels: Record<string, string>
   abyss_max_rerolls: number
+  games: Record<string, string>
+  accent_presets: Record<string, string>
   default_max_loops: number
   screen: [number, number, number, number]
   has_clip: boolean

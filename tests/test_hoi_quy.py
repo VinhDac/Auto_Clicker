@@ -5,7 +5,6 @@ import tkinter as tk
 
 import _boot  # noqa: F401  — đặt sys.path + thư mục làm việc
 import core
-import auto_clicker_gui as m
 
 ok = fail = 0
 
@@ -149,65 +148,12 @@ loops_fmt = {"name": "gd1", "action_loops": [
 steps2 = core.normalize_process(loops_fmt)["steps"]
 check("đọc được định dạng action_loops, giữ đủ 2 loop", len(steps2) == 2, steps2)
 
-print("\n=== 5. Mọi loại hành động đều mở được ActionEditor ===")
-root = tk.Tk()
-root.withdraw()
-m.apply_theme(root)
-app = m.AutoClickerApp(root)
-root.update()
-samples = {
-    "left_click": {"type": "left_click", "point": [1, 2]},
-    "right_click": {"type": "right_click", "point": [1, 2]},
-    "mod_click": {"type": "mod_click", "point": [1, 2], "keys": "ctrl", "button": "left"},
-    "key_press": {"type": "key_press", "key": "enter"},
-    "delay": {"type": "delay", "min_ms": 100, "max_ms": 200},
-    "check_mod": {"type": "check_mod", "point": [1, 2],
-                  "conditions": [{"mod": "# to maximum Life", "tier": 1}]},
-    "abyss": {"type": "abyss", "frame": [1, 2, 517, 283],
-              "conditions": [{"mod": "# to all Attributes"}]},
-}
-bad = []
-for t, act in samples.items():
-    try:
-        ed = m.ActionEditor(root, app, act)
-        root.update()
-        ed.destroy()
-        root.update()
-    except Exception as e:
-        bad.append((t, repr(e)))
-check("cả 8 loại mở được không lỗi", not bad, bad)
 
-print("\n=== 6. Đổi loại giữa Abyss và check_mod ngay trong hộp thoại ===")
-try:
-    ed = m.ActionEditor(root, app, samples["check_mod"])
-    root.update()
-    ed.type_var.set("abyss")
-    ed._render()
-    root.update()
-    ed.type_var.set("check_mod")
-    ed._render()
-    root.update()
-    ed.destroy()
-    root.update()
-    check("đổi qua lại không lỗi", True)
-except Exception as e:
-    check("đổi qua lại không lỗi", False, repr(e))
+# ---------------------------------------------------------------------------
+# Phần kiểm GIAO DIỆN tkinter đã bỏ: giao diện đó không còn (bản web thay thế).
+# Luật hợp lệ của hành động giờ nằm ở `core.build_action`, kiểm trong
+# tests/test_do_thi_va_api.py §8 — dùng chung cho mọi giao diện.
+# ---------------------------------------------------------------------------
 
-
-print("\n=== 7. Đã gỡ 3 loại không dùng: move / double_click / scroll ===")
-go_bo = {"move", "double_click", "scroll"}
-check("không còn trong danh sách loại", not go_bo & set(core.ACTION_TYPES),
-      core.ACTION_TYPES)
-check("còn đúng 8 loại", len(core.ACTION_TYPES) == 8, core.ACTION_TYPES)
-check("POINT_TYPES chỉ còn trái/phải click",
-      set(core.POINT_TYPES) == {"left_click", "right_click"}, core.POINT_TYPES)
-for t in go_bo:
-    p = core.validate_flow([{"type": t, "point": [1, 2]}], 0, 10)
-    check(f"template cũ còn \"{t}\" -> BÁO LỖI chứ không chạy mù",
-          any(x["severity"] == "error" and "không còn được hỗ trợ" in x["message"]
-              for x in p), p)
-
-root.update()
-root.destroy()
 print(f"\nKẾT QUẢ: {ok} đúng / {fail} sai")
 sys.exit(1 if fail else 0)

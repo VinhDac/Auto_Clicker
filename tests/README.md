@@ -1,58 +1,24 @@
 # Bài test
 
-Chạy trước mỗi lần build:
+Chạy tất cả:
 
-```
-tools\chay_test.bat
-```
+    .venv\Scripts\python.exe tests\chay_tat_ca.py          # nhóm an toàn
+    .venv\Scripts\python.exe tests\chay_tat_ca.py --full   # thêm bài điều khiển chuột thật
 
-Hoặc:
+## Ba cái bẫy đã dính, đừng dính lại
 
-```
-python tests\chay_tat_ca.py          # các bài an toàn (~10 giây)
-python tests\chay_tat_ca.py --full   # thêm bài điều khiển chuột thật (~30 giây)
-```
+1. **Đo bằng ctypes phải khai `argtypes`/`restype`.** Gọi `IsHungAppWindow(hwnd)` mà
+   không khai làm HWND 64-bit bị cắt còn 32-bit; hàm trả "không treo" trong khi app
+   đang treo. Suýt kết luận sai hoàn toàn.
 
-Mã thoát 0 = tất cả đạt. Từng bài cũng chạy riêng được:
-`python tests\test_them_hanh_dong.py`
+2. **Test hỏi DOM không thấy được app treo.** Đã có lúc 598 check xanh mà app hoàn
+   toàn không dùng được. Chỉ `SendMessageTimeout(WM_NULL)` mới trả lời được câu
+   "cửa sổ còn xử lý thông điệp không" — đó là việc của `test_e2e_web.py`.
 
-## Có những bài nào
+3. **Ca đối chứng hỏng thì vứt cả thí nghiệm.** Trước khi kết luận "app treo", phải
+   kiểm một cửa sổ pywebview trống xem nó có bị báo treo không.
 
-| File | Kiểm cái gì |
-|---|---|
-| `test_abyss_ocr.py` | OCR 3 ô mod + dò nút refresh, chạy trên 2 ảnh mẫu thật ở thư mục gốc |
-| `test_abyss_luong_chay.py` | Luồng reveal → quét → reroll → confirm, đúng thứ tự click, đọc lỗi thì không chọn bừa |
-| `test_abyss_giao_dien.py` | Hộp thoại Abyss, overlay căn khung, lưu/mở template |
-| `test_abyss_loai_tru.py` | Danh sách loại trừ: không chốt mod bị cấm, cả 3 ô bị cấm thì reroll rồi dừng |
-| `test_luoi_inventory.py` | Lấy currency từ nhiều ô: dò ô còn/hết trên `stash_sample.png`, chịu lệch khung, hết thì dừng |
-| `test_di_chuyen.py` | Di chuyển WASD: 8 hướng hợp lệ, W/S và A/D tự triệt tiêu, dừng giữa chừng vẫn thả phím |
-| `test_giu_shift.py` | Tick "Giữ Shift suốt Loop" + gia cố `mod_click` |
-| `test_hop_thoai_hanh_dong.py` | Hộp thoại hành động không được chứa widget chiếm grab toàn cục |
-| `test_them_hanh_dong.py` | Thêm/sửa/xoá/copy hành động qua nhiều Loop, setup dài 40 hành động, lưu & mở lại |
-| `test_chon_buoc_chuot.py` | Chọn bước và kéo-thả bằng sự kiện chuột |
-| `test_phim_tat.py` | Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả, dán rác không vỡ |
-| `test_nhom_hd.py` | Nhóm HĐ 1 lần: khung dùng chung với Loop, 3 điều khiển bị khoá, chạy 1 lượt, template riêng |
-| `test_hoi_quy.py` | Các tính năng cũ không bị vỡ |
-| `test_modclick_chuot_that.py` | Chạy thật bằng chuột thật — **chỉ chạy với `--full`** |
+## Ảnh mẫu
 
-## Ba cái bẫy khi viết thêm bài test
-
-Cả ba đều đã từng làm mất thời gian, ghi lại để khỏi vấp lại:
-
-1. **Cửa sổ `withdraw()` không nhận sự kiện chuột/phím.** Bài test dùng
-   `event_generate` bắt buộc phải `root.deiconify()`, nếu không sự kiện bị nuốt
-   im lặng và bài test "đạt" trong khi lỗi vẫn còn nguyên. Lỗi "thêm hành động
-   vào Loop 2 không hiện" chỉ lòi ra khi cửa sổ được hiện thật.
-
-2. **Hộp thoại giả thay `ActionEditor` không được `destroy()` ngay trong
-   `__init__`** — `wait_window()` sẽ ném "bad window path name". Dùng
-   `self.after(1, self.destroy)`.
-
-3. **Chặn `messagebox` ở đầu bài test.** `delete_step()` bật hộp thoại xác nhận
-   thật và treo bài test vô hạn:
-   ```python
-   m.messagebox.askyesno = lambda *a, **k: True
-   ```
-
-Ngoài ra: mọi bài phải `import _boot` đầu tiên — nó đặt `sys.path` và thư mục làm
-việc về gốc dự án nên chạy từ đâu cũng được.
+`tests/anh/` — ảnh chụp thật từ game, dùng để kiểm OCR Abyss và bộ dò ô kho đồ.
+Đường dẫn trong test tính từ GỐC dự án vì `_boot.py` `chdir` về đó.

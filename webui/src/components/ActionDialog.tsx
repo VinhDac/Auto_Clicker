@@ -50,6 +50,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
   const [dongExcl, setDongExcl] = useState<string[]>([])
   const [chonCond, setChonCond] = useState(-1)
   const [chonExcl, setChonExcl] = useState(-1)
+  const [keoCond, setKeoCond] = useState<number | null>(null)
   const oDauTien = useRef<HTMLInputElement>(null)
 
   const t: string = d.type
@@ -75,6 +76,39 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
   }, [d.excludes, t])
 
   useEffect(() => { oDauTien.current?.focus() }, [])
+
+  /* DEL_COND — phím Delete xoá dòng đang chọn ở bảng điều kiện / loại trừ,
+     giống hệt bản tkinter (cond_box và excl_box đều bind <Delete>). */
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      const o = e.target as HTMLElement
+      if (o && (o.tagName === 'INPUT' || o.tagName === 'SELECT')) return
+      if (e.key !== 'Delete') return
+      if (chonExcl >= 0) {
+        e.preventDefault()
+        dat('excludes', (d.excludes ?? []).filter((_: unknown, i: number) => i !== chonExcl))
+        setChonExcl(-1)
+      } else if (chonCond >= 0) {
+        e.preventDefault()
+        dat('conditions', (d.conditions ?? []).filter((_: unknown, i: number) => i !== chonCond))
+        setChonCond(-1)
+      }
+    }
+    window.addEventListener('keydown', f)
+    return () => window.removeEventListener('keydown', f)
+  })
+
+  /** DRAG_COND — kéo-thả đổi thứ tự điều kiện. Thứ tự Ở ĐÂY LÀ ƯU TIÊN: dòng trên
+   *  được kiểm trước, khớp là dừng. Nên đổi thứ tự phải dễ như bản cũ. */
+  function thaCond(dich: number) {
+    if (keoCond === null || keoCond === dich) return
+    const x = [...(d.conditions ?? [])]
+    const [m] = x.splice(keoCond, 1)
+    x.splice(dich, 0, m)
+    dat('conditions', x)
+    setChonCond(dich)
+    setKeoCond(null)
+  }
 
   const modLoc = useMemo(() => {
     const w = tim.trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -179,10 +213,15 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
 
   const bangDieuKien = (
     <>
-      <div className="tieu-de-phu">Điều kiện — dòng TRÊN ưu tiên trước:</div>
+      <div className="tieu-de-phu">Điều kiện — dòng TRÊN ưu tiên trước (kéo-thả để đổi thứ tự):</div>
       <div className="danh-sach cao-4">
         {dongCond.map((s, i) => (
-          <div key={i} className={'muc' + (i === chonCond ? ' chon' : '')}
+          <div key={i} draggable
+               onDragStart={() => setKeoCond(i)}
+               onDragOver={e => e.preventDefault()}
+               onDrop={() => thaCond(i)}
+               onDragEnd={() => setKeoCond(null)}
+               className={'muc' + (i === chonCond ? ' chon' : '') + (keoCond === i ? ' dang-keo' : '')}
                onClick={() => setChonCond(i)}>{i + 1}.  {s}</div>
         ))}
         {dongCond.length === 0 && <div className="muc mo">chưa có điều kiện nào</div>}

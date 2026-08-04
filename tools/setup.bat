@@ -33,7 +33,7 @@ if errorlevel 1 (
 echo.
 echo ============================================
 echo   Xong! Chay ung dung bang lenh:
-echo       python auto_clicker_gui.py
+echo       .venv\Scripts\python.exe app_web.py
 echo ============================================
 echo.
 pause

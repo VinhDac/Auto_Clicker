@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 /** Thanh công cụ kiểu ribbon của Paint: nút nhóm lại, nhãn nhóm nằm DƯỚI, có vạch
  *  ngăn giữa các nhóm. Mọi thứ "thêm vào" nằm ở trên; canvas phía dưới chỉ để di
@@ -24,6 +24,43 @@ function Nut({ ten, icon, onClick, tat, title }: {
   )
 }
 
+export interface MucMenu { nhan: string; chay: () => void; tat?: boolean; lyDo?: string }
+
+/** Nút có menu xổ xuống — thay cho `tk.Menu.tk_popup` của bản cũ.
+ *  Mục bị tắt vẫn HIỆN kèm lý do, đúng như bản tkinter: giấu đi thì người dùng
+ *  tưởng tính năng không tồn tại. */
+function NutMenu({ ten, icon, muc }: { ten: string; icon: ReactNode; muc: MucMenu[] }) {
+  const [mo, setMo] = useState(false)
+  const boc = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!mo) return
+    const f = (e: MouseEvent) => {
+      if (!boc.current?.contains(e.target as globalThis.Node)) setMo(false)
+    }
+    window.addEventListener('mousedown', f)
+    return () => window.removeEventListener('mousedown', f)
+  }, [mo])
+  return (
+    <div className="boc-menu" ref={boc}>
+      <button className="nut-lon" onClick={() => setMo(v => !v)}>
+        <span className="hinh">{icon}</span>
+        <span>{ten} ▾</span>
+      </button>
+      {mo && (
+        <div className="menu-xo">
+          {muc.map((m, i) => (
+            <button key={i} className="muc-menu" disabled={m.tat}
+                    title={m.tat ? m.lyDo : undefined}
+                    onClick={() => { setMo(false); m.chay() }}>
+              {m.nhan}{m.tat && m.lyDo ? <span className="ly-do">— {m.lyDo}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
 const I = {
@@ -37,6 +74,9 @@ const I = {
   redo: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M16 9.5H8a4.5 4.5 0 0 0 0 9h3" /><path {...S} d="M13 6l3.5 3.5L13 13" /></svg>,
   save: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4.5 5.8A1.3 1.3 0 0 1 5.8 4.5h8.4l3.3 3.3v8.4a1.3 1.3 0 0 1-1.3 1.3H5.8a1.3 1.3 0 0 1-1.3-1.3z" /><path {...S} d="M7.5 4.5v4h6v-4M7.5 17.5v-4h7v4" /></svg>,
   open: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M3.5 17V6.5A1 1 0 0 1 4.5 5.5h4l2 2.2h6a1 1 0 0 1 1 1V17z" /><path {...S} d="M3.5 17l2.6-6h13l-2.6 6z" /></svg>,
+  edit: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="3.5" y="3.5" width="15" height="15" rx="2" /><path {...S} d="M7.5 13.5l6-6M11 6.5l4 4" /></svg>,
+  play: <svg viewBox="0 0 22 22" width="22" height="22"><circle {...S} cx="11" cy="11" r="7.5" /><path {...S} d="M9 7.5l5.5 3.5L9 14.5z" /></svg>,
+  eye: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M2.5 11S5.8 5.5 11 5.5 19.5 11 19.5 11 16.2 16.5 11 16.5 2.5 11 2.5 11z" /><circle {...S} cx="11" cy="11" r="2.6" /></svg>,
   fit: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4 8V4.5h3.5M18 8V4.5h-3.5M4 14v3.5h3.5M18 14v3.5h-3.5" /><rect {...S} x="8" y="8" width="6" height="6" rx="1" /></svg>,
 }
 
@@ -44,13 +84,16 @@ export interface RibbonProps {
   themLoop: () => void
   themNhom: () => void
   themHanhDong: () => void
+  sua: () => void
+  datBatDau: () => void
   doiTen: () => void
   nhanBan: () => void
   xoa: () => void
   hoanTac: () => void
   lamLai: () => void
-  luu: () => void
-  mo: () => void
+  mucLuu: MucMenu[]
+  mucMo: MucMenu[]
+  xemDiem: () => void
   vuaManHinh: () => void
   coChon: boolean
   coTheHoanTac: boolean
@@ -67,9 +110,16 @@ export default function Ribbon(p: RibbonProps) {
       </Nhom>
 
       <Nhom ten="Sửa">
+        <Nut ten="Sửa" icon={I.edit} onClick={p.sua} tat={!p.coChon}
+             title="Mở hộp thoại sửa khối đang chọn (hoặc double-click vào khối)" />
         <Nut ten="Đổi tên" icon={I.rename} onClick={p.doiTen} tat={!p.coChon} title="Đổi tên khối đang chọn (F2)" />
         <Nut ten="Nhân bản" icon={I.copy} onClick={p.nhanBan} tat={!p.coChon} title="Nhân bản khối đang chọn (Ctrl+D)" />
         <Nut ten="Xoá" icon={I.del} onClick={p.xoa} tat={!p.coChon} title="Xoá khối đang chọn (Delete)" />
+      </Nhom>
+
+      <Nhom ten="Luồng">
+        <Nut ten="Bắt đầu" icon={I.play} onClick={p.datBatDau} tat={!p.coChon}
+             title="Đặt khối đang chọn làm bước chạy đầu tiên (số 1)" />
       </Nhom>
 
       <Nhom ten="Hoàn tác">
@@ -78,11 +128,13 @@ export default function Ribbon(p: RibbonProps) {
       </Nhom>
 
       <Nhom ten="Template">
-        <Nut ten="Lưu" icon={I.save} onClick={p.luu} title="Lưu Process thành template" />
-        <Nut ten="Mở" icon={I.open} onClick={p.mo} title="Mở template Process" />
+        <NutMenu ten="Lưu" icon={I.save} muc={p.mucLuu} />
+        <NutMenu ten="Mở" icon={I.open} muc={p.mucMo} />
       </Nhom>
 
       <Nhom ten="Xem">
+        <Nut ten="Xem điểm" icon={I.eye} onClick={p.xemDiem}
+             title="Phủ màn hình, chỉ ra mọi điểm sẽ được click" />
         <Nut ten="Vừa khung" icon={I.fit} onClick={p.vuaManHinh} title="Thu phóng cho vừa toàn bộ sơ đồ" />
       </Nhom>
     </div>

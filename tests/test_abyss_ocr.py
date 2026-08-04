@@ -37,7 +37,7 @@ def use_image(path):
 
 
 print("=== abyss_sample.png (CÓ nút refresh) ===")
-use_image("abyss_sample.png")
+use_image("tests/anh/abyss_sample.png")
 texts, has_refresh, reason = core.abyss_scan(FRAME)
 for i, t in enumerate(texts, 1):
     print(f"    ô {i}: {t!r}")
@@ -73,7 +73,7 @@ check("mod không có trong panel thì không khớp", idx is None, f"idx={idx}"
 
 print()
 print("=== abyss_no_refresh.png (KHÔNG có nút refresh) ===")
-use_image("abyss_no_refresh.png")
+use_image("tests/anh/abyss_no_refresh.png")
 texts, has_refresh, reason = core.abyss_scan(FRAME)
 for i, t in enumerate(texts, 1):
     print(f"    ô {i}: {t!r}")
@@ -97,7 +97,7 @@ check("mod dài nhất vẫn khớp (ô 3)", idx == 2, f"idx={idx}")
 
 print()
 print("=== khung căn SAI chỗ (phải báo lỗi, không được im lặng) ===")
-use_image("abyss_sample.png")
+use_image("tests/anh/abyss_sample.png")
 texts, has_refresh, reason = core.abyss_scan((0, 0, 60, 33))
 check("khung sai -> có lý do lỗi", reason is not None, f"reason={reason}")
 print(f"    lý do: {reason}")

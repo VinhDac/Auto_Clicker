@@ -45,14 +45,17 @@ def _in_ket_qua(ok, value=None, error=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(add_help=True)
-    ap.add_argument("mode", choices=["point", "abyss_frame", "inv_grid"])
+    ap.add_argument("mode", choices=["point", "abyss_frame", "inv_grid", "review"])
     ap.add_argument("--frame", default=None, help="JSON [x,y,w,h]")
     ap.add_argument("--cells", default=None, help="JSON [[hang,cot], ...]")
+    ap.add_argument("--points", default=None,
+                    help='JSON [[x, y, "nhãn", "ok|accent|warn"], ...] cho mode review')
     args = ap.parse_args(argv)
 
     try:
         frame = json.loads(args.frame) if args.frame else None
         cells = json.loads(args.cells) if args.cells else None
+        points = json.loads(args.points) if args.points else None
     except json.JSONDecodeError as e:
         _in_ket_qua(False, error=f"--frame/--cells không phải JSON hợp lệ: {e}")
         return 2
@@ -60,10 +63,10 @@ def main(argv=None):
     # Import muộn: nếu thiếu thư viện thì báo qua JSON chứ không phun traceback.
     try:
         import tkinter as tk
-        import auto_clicker_gui as g
+        import overlay_ui as g
         import core
     except Exception as e:
-        _in_ket_qua(False, error=f"không import được giao diện cũ: {type(e).__name__}: {e}")
+        _in_ket_qua(False, error=f"không import được overlay_ui: {type(e).__name__}: {e}")
         return 3
 
     ket_qua = {"xong": False, "gia_tri": None}
@@ -87,6 +90,12 @@ def main(argv=None):
             g.PointSelector(root, xong)
         elif args.mode == "abyss_frame":
             g.AbyssFrameSelector(root, frame, xong)
+        elif args.mode == "review":
+            # Tên màu do phía gọi gửi sang dạng khoá ("ok"/"accent"/"warn") chứ không
+            # phải mã hex — bảng màu là chuyện của giao diện, đổi theme thì đổi ở đây.
+            pts = [(p[0], p[1], p[2], g.THEME.get(p[3], g.THEME["accent"]))
+                   for p in (points or [])]
+            g.ReviewOverlay(root, pts, lambda: xong(True))
         else:
             g.InvGridSelector(root, frame, cells or [], xong)
     except Exception as e:
@@ -107,6 +116,8 @@ def main(argv=None):
     if args.mode == "inv_grid":
         fr, cl = v
         _in_ket_qua(True, {"frame": list(fr), "cells": [list(c) for c in cl]})
+    elif args.mode == "review":
+        _in_ket_qua(True, True)        # chỉ để xem, không trả dữ liệu gì
     else:
         _in_ket_qua(True, list(v))
     return 0

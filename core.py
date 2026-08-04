@@ -538,6 +538,102 @@ def step_display(step):
     return f"⚡ {action_display(step)}   (chạy 1 lần)"
 
 
+# Trần số bước được chạy trong 1 Process. Đồ thị cho phép nối ngược lên trên (vòng
+# lặp ở tầng Process), nên phải có chốt chặn — nếu không, một cái nối sai là app chạy
+# mãi không dừng.
+MAX_PROCESS_STEPS = 10000
+
+
+def flow_map(steps, edges):
+    """(bảng_tra_id, bước_kế_tiếp) — nền tảng dùng chung cho cả chạy lẫn đánh số.
+
+    `bước_kế_tiếp[id] = id` theo cổng "out". Cổng khác dành cho rẽ nhánh sau này.
+    """
+    theo_id = {s.get("id"): s for s in (steps or []) if isinstance(s, dict) and s.get("id")}
+    ke = {}
+    for e in (edges or []):
+        if (e.get("port") or "out") != "out":
+            continue
+        a, b = e.get("from"), e.get("to")
+        if a in theo_id and b in theo_id and a not in ke:
+            ke[a] = b        # 2 đường ra cùng cổng là cấu hình sai; validate sẽ báo
+    return theo_id, ke
+
+
+def flow_entry(steps, edges):
+    """Bước BẮT ĐẦU = bước đầu tiên trong danh sách mà không có đường nối đi vào.
+
+    Lấy "đầu tiên trong danh sách" làm tiêu chí phá hoà: cần một quy tắc xác định,
+    và thứ tự tạo khối là thứ người dùng nhìn thấy được (số góc khối).
+    Không tìm được (mọi bước đều có đường vào -> đồ thị toàn vòng) thì trả None,
+    `validate_process` sẽ báo lỗi thay vì đoán bừa.
+    """
+    ds = [s for s in (steps or []) if isinstance(s, dict) and s.get("id")]
+    if not ds:
+        return None
+    co_vao = {e.get("to") for e in (edges or []) if (e.get("port") or "out") == "out"}
+    for s in ds:
+        if s["id"] not in co_vao:
+            return s["id"]
+    return None
+
+
+def flow_order(steps, edges):
+    """Thứ tự chạy THẬT -> {id: số thứ tự bắt đầu từ 1}, + những bước không bao giờ tới.
+
+    Đây chính là con số hiện ở góc khối trên canvas. Cố ý dùng CHUNG một phép duyệt
+    với `ProcessRunner`, để con số không thể nói khác việc app thực sự làm.
+
+    Trả về: {"order": {...}, "unreachable": [id...], "entry": id|None, "loop": bool}
+    """
+    theo_id, ke = flow_map(steps, edges)
+    bat_dau = flow_entry(steps, edges)
+    thu_tu, cur, i, vong = {}, bat_dau, 1, False
+    while cur and cur in theo_id:
+        if cur in thu_tu:
+            vong = True          # nối ngược lên -> vòng lặp ở tầng Process
+            break
+        thu_tu[cur] = i
+        i += 1
+        cur = ke.get(cur)
+    return {"order": thu_tu,
+            "unreachable": [sid for sid in theo_id if sid not in thu_tu],
+            "entry": bat_dau,
+            "loop": vong}
+
+
+def validate_flow_graph(steps, edges):
+    """Soát riêng phần ĐỒ THỊ. Tách khỏi `validate_actions` vì đây là lỗi ở mức nối
+    dây, không phải ở mức một hành động."""
+    ra = []
+    ds = [s for s in (steps or []) if isinstance(s, dict) and s.get("id")]
+    if not ds:
+        return ra
+
+    # 2 đường ra cùng cổng "out" -> chạy tới đó không biết đi đâu
+    dem = {}
+    for e in (edges or []):
+        if (e.get("port") or "out") == "out":
+            dem[e.get("from")] = dem.get(e.get("from"), 0) + 1
+    theo_id = {s["id"]: s for s in ds}
+    for sid, n in dem.items():
+        if n > 1 and sid in theo_id:
+            ra.append({"severity": "error", "step": sid, "index": None,
+                       "message": f'"{step_title(theo_id[sid])}" có {n} đường nối đi ra — '
+                                  f"không biết chạy tiếp đường nào. Hãy xoá bớt."})
+
+    kq = flow_order(steps, edges)
+    if kq["entry"] is None:
+        ra.append({"severity": "error", "step": None, "index": None,
+                   "message": "Không tìm được bước bắt đầu — mọi bước đều có đường nối "
+                              "đi vào. Hãy gỡ bớt một đường để có chỗ khởi đầu."})
+    for sid in kq["unreachable"]:
+        ra.append({"severity": "warning", "step": sid, "index": None,
+                   "message": f'"{step_title(theo_id[sid])}" không bao giờ chạy tới — '
+                              f"chưa có đường nối dẫn vào từ bước bắt đầu."})
+    return ra
+
+
 def _giu_id_pos(nguon, dich):
     """Chuyển `id` và `pos` từ dict gốc sang dict đã chuẩn hoá.
 
@@ -597,8 +693,8 @@ def make_process_template(name, game, start_delay, steps, edges=None):
     """Đóng gói cả Process thành template loại "process".
 
     Ở đây chứ không ở tầng giao diện: `make_loop_template`/`make_group_template` vốn đã
-    nằm trong core, riêng bản Process trước đây kẹt lại trong `auto_clicker_gui.py`
-    (`template_data`) với `schema`/`type` viết cứng. Hai giao diện (tkinter và web) mà
+    nằm trong core, riêng bản Process trước đây kẹt lại ở tầng giao diện
+    với `schema`/`type` viết cứng. Hai giao diện (tkinter và web) mà
     mỗi bên tự ráp định dạng thì sớm muộn cũng lệch nhau."""
     st = ensure_step_ids(steps or [])
     return {
@@ -893,15 +989,21 @@ def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=No
     return problems
 
 
-def validate_process(steps, has_clip=None, screen=None):
+def validate_process(steps, has_clip=None, screen=None, edges=None):
     """Soát cả Process. Trả về [{"severity", "message", "step": int|None, "index": int|None}]
-    trong đó `step` = vị trí bước, `index` = vị trí hành động trong bước đó (nếu có)."""
+    trong đó `step` = vị trí bước, `index` = vị trí hành động trong bước đó (nếu có).
+
+    `edges` (tuỳ chọn) bật thêm phần soát ĐỒ THỊ: có bước bắt đầu không, có bước nào
+    không bao giờ chạy tới không, có bước nào chia 2 đường ra cùng cổng không.
+    Bỏ trống thì bỏ qua phần đó — giao diện tkinter cũ không có khái niệm đường nối."""
     if has_clip is None:
         has_clip = HAS_CLIP
     if screen is None:
         screen = virtual_screen_rect()
 
     problems = []
+    if edges is not None:
+        problems.extend(validate_flow_graph(steps, edges))
     if not steps:
         problems.append({"severity": "error", "step": None, "index": None,
                          "message": "Process chưa có bước nào — hãy thêm 1 Action_Loop hoặc 1 hành động lẻ."})
@@ -2129,6 +2231,82 @@ class ProcessRunner:
         finally:
             self.held.release_all()
 
+    def _chay_mot_buoc(self, step, si, total, pre_click_ms, hover_ms, copy_keys, achieved):
+        """Chạy ĐÚNG một bước. Trả về (lý_do_dừng|None, số_vòng).
+
+        None = chạy tiếp bước sau. Chuỗi = dừng cả Process với lý do đó.
+        Tách khỏi `_run_inner` để vòng duyệt bên ngoài đi theo ĐƯỜNG NỐI được — vòng
+        `for ... enumerate(steps)` cũ chỉ chạy tuột từ trên xuống theo thứ tự danh sách,
+        nên sơ đồ vẽ một đằng mà app chạy một nẻo."""
+        name = step_title(step)
+
+        if not is_loop_step(step):
+            # Nhóm HĐ 1 lần và hành động lẻ: chạy đúng 1 lượt, không lặp.
+            if is_group_step(step):
+                seq = step.get("actions") or []
+                self._status(f"[{si + 1}/{total}] {name} (nhóm 1 lần, {len(seq)} hành động)")
+                self._log(f"▤ [{si + 1}/{total}] {name} — nhóm HĐ 1 lần, "
+                          f"{len(seq)} hành động")
+            else:
+                seq = [step]
+                self._status(f"[{si + 1}/{total}] {name} (hành động lẻ)")
+                self._log(f"⚡ [{si + 1}/{total}] {name} — hành động lẻ, chạy 1 lần")
+            hit, fail = self.run_sequence(seq, pre_click_ms, hover_ms, copy_keys,
+                                          stop_on_hit=False)
+            if self.fatal:
+                s = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
+                self._log(s, "err")
+                return s, 0
+            if fail:
+                s = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
+                     f"({fail}). Kiểm tra: game còn focus? Điểm rê chuột còn đúng?")
+                self._log(s, "err")
+                return s, 0
+            if hit:
+                # Bước 1 lượt không có vòng nào để kết thúc -> chỉ ghi nhận rồi đi tiếp.
+                achieved.append((name, goal_display(hit)))
+                self._log(f"   ✅ {name}: khớp {goal_display(hit)} "
+                          f"(bước 1 lượt nên vẫn chạy tiếp)", "ok")
+            return None, 0
+
+        self._status(f"[{si + 1}/{total}] {name}: bắt đầu...")
+        self._log(f"🔁 [{si + 1}/{total}] {name} — bắt đầu "
+                  f"(tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng)")
+        outcome, loops, detail = self.run_loop_step(
+            step, si, total, pre_click_ms, hover_ms, copy_keys)
+
+        if outcome == "achieved":
+            achieved.append((name, detail))
+            self._status(f"✅ [{si + 1}/{total}] {name}: đạt mục tiêu sau {loops} vòng "
+                         f"({detail})")
+            self._log(f"✅ [{si + 1}/{total}] {name}: ĐẠT MỤC TIÊU sau {loops} vòng — {detail}",
+                      "ok")
+            return None, loops
+        if outcome == "done":
+            self._status(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng")
+            self._log(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng "
+                      f"(loop này không đặt mục tiêu)", "ok")
+            return None, loops
+        if outcome == "exhausted":
+            s = (f"⛔ DỪNG cả Process — bước {si + 1} \"{name}\" chạy hết {loops} vòng "
+                 f"mà chưa đạt mục tiêu. Không chạy tiếp để khỏi phí currency cho "
+                 f"các bước sau.")
+            self._log(s, "err")
+            return s, loops
+        if outcome == "read_fail":
+            s = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
+                 f"{MAX_READ_FAIL_STREAK} lần liên tiếp ({detail}). Kiểm tra: cửa sổ game "
+                 f"còn đang focus? Điểm rê chuột còn đúng vị trí item? "
+                 f"Đã dừng để không phí currency.")
+            self._log(s, "err")
+            return s, loops
+        if self.fatal:
+            s = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
+            self._log(s, "err")
+            return s, loops
+        self._log(f"■ Đã dừng ở bước {si + 1} \"{name}\" (người dùng dừng)", "warn")
+        return "Đã dừng", loops
+
     def _run_inner(self):
         cfg = self.cfg
         for i in range(cfg.get("start_delay", 0), 0, -1):
@@ -2138,7 +2316,18 @@ class ProcessRunner:
             time.sleep(1)
 
         steps = cfg["steps"]
-        total = len(steps)
+        # Bước thiếu `id` (cấu hình dựng tay, file rất cũ) sẽ bị phép duyệt đồ thị bỏ
+        # qua và Process im lặng không chạy gì. Cấp id trước cho chắc.
+        ensure_step_ids(steps)
+        # ĐƯỜNG NỐI quyết định thứ tự chạy, không phải thứ tự trong danh sách.
+        # Không có khoá `edges` (file cũ, hoặc giao diện tkinter) -> chuỗi thẳng
+        # 1→2→3, đúng hành vi từ trước tới nay.
+        edges = cfg.get("edges")
+        if edges is None:
+            edges = default_edges(steps)
+        theo_id, ke_tiep = flow_map(steps, edges)
+        cur = flow_entry(steps, edges)
+        total = len(flow_order(steps, edges)["order"]) or len(steps)
         pre_click_ms = cfg.get("pre_click_ms", 0)
         hover_ms = cfg.get("hover_ms", 250)
         copy_keys = [k.strip() for k in (cfg.get("copy_keys") or "ctrl+c").split("+") if k.strip()]
@@ -2146,83 +2335,29 @@ class ProcessRunner:
         total_loops = 0
         achieved = []          # [(tên bước, mod đã ra)] để tóm tắt cuối cùng
         status = None
+        si = 0
 
         self._log(f"▶ Bắt đầu Process \"{cfg.get('name', '')}\" — {total} bước", "ok")
 
-        for si, step in enumerate(steps):
+        while cur and cur in theo_id:
             if self.stop_flag.is_set():
                 status = "Đã dừng"
                 break
-            name = step_title(step)
-
-            if not is_loop_step(step):
-                # Nhóm HĐ 1 lần và hành động lẻ: chạy đúng 1 lượt, không lặp.
-                if is_group_step(step):
-                    seq = step.get("actions") or []
-                    self._status(f"[{si + 1}/{total}] {name} (nhóm 1 lần, {len(seq)} hành động)")
-                    self._log(f"▤ [{si + 1}/{total}] {name} — nhóm HĐ 1 lần, "
-                              f"{len(seq)} hành động")
-                else:
-                    seq = [step]
-                    self._status(f"[{si + 1}/{total}] {name} (hành động lẻ)")
-                    self._log(f"⚡ [{si + 1}/{total}] {name} — hành động lẻ, chạy 1 lần")
-                hit, fail = self.run_sequence(seq, pre_click_ms, hover_ms, copy_keys,
-                                              stop_on_hit=False)
-                if self.fatal:
-                    status = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
-                    self._log(status, "err")
-                    break
-                if fail:
-                    status = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
-                              f"({fail}). Kiểm tra: game còn focus? Điểm rê chuột còn đúng?")
-                    self._log(status, "err")
-                    break
-                if hit:
-                    # Bước 1 lượt không có vòng nào để kết thúc -> chỉ ghi nhận rồi đi tiếp.
-                    achieved.append((name, goal_display(hit)))
-                    self._log(f"   ✅ {name}: khớp {goal_display(hit)} "
-                              f"(bước 1 lượt nên vẫn chạy tiếp)", "ok")
-                continue
-
-            self._status(f"[{si + 1}/{total}] {name}: bắt đầu...")
-            self._log(f"🔁 [{si + 1}/{total}] {name} — bắt đầu "
-                      f"(tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng)")
-            outcome, loops, detail = self.run_loop_step(
-                step, si, total, pre_click_ms, hover_ms, copy_keys)
+            ly_do, loops = self._chay_mot_buoc(theo_id[cur], si, total, pre_click_ms,
+                                               hover_ms, copy_keys, achieved)
             total_loops += loops
-
-            if outcome == "achieved":
-                achieved.append((name, detail))
-                self._status(f"✅ [{si + 1}/{total}] {name}: đạt mục tiêu sau {loops} vòng "
-                             f"({detail})")
-                self._log(f"✅ [{si + 1}/{total}] {name}: ĐẠT MỤC TIÊU sau {loops} vòng — {detail}",
-                          "ok")
-                continue
-            if outcome == "done":
-                self._status(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng")
-                self._log(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng "
-                          f"(loop này không đặt mục tiêu)", "ok")
-                continue
-            if outcome == "exhausted":
-                status = (f"⛔ DỪNG cả Process — bước {si + 1} \"{name}\" chạy hết {loops} vòng "
-                          f"mà chưa đạt mục tiêu. Không chạy tiếp để khỏi phí currency cho "
-                          f"các bước sau.")
+            if ly_do is not None:
+                status = ly_do
+                break
+            si += 1
+            if si >= MAX_PROCESS_STEPS:
+                # Đồ thị cho phép nối ngược lên trên -> có thể tạo vòng lặp vô tận.
+                # Chốt chặn này để một cái nối sai không làm app chạy mãi.
+                status = (f"⛔ DỪNG — đã chạy {si} bước liên tiếp. Nhiều khả năng "
+                          f"đường nối tạo thành vòng lặp không có lối ra.")
                 self._log(status, "err")
                 break
-            if outcome == "read_fail":
-                status = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
-                          f"{MAX_READ_FAIL_STREAK} lần liên tiếp ({detail}). Kiểm tra: cửa sổ game "
-                          f"còn đang focus? Điểm rê chuột còn đúng vị trí item? "
-                          f"Đã dừng để không phí currency.")
-                self._log(status, "err")
-                break
-            if self.fatal:
-                status = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
-                self._log(status, "err")
-                break
-            status = "Đã dừng"
-            self._log(f"■ Đã dừng ở bước {si + 1} \"{name}\" (người dùng dừng)", "warn")
-            break
+            cur = ke_tiep.get(cur)
 
         if status is None:
             # Chạy trọn cả Process. Nêu luôn (các) mod đã ra để khỏi mất thông tin.

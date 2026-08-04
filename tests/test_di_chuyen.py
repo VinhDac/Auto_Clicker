@@ -6,7 +6,6 @@ import tkinter as tk
 
 import _boot  # noqa: F401  — đặt sys.path + thư mục làm việc
 import core
-import auto_clicker_gui as m
 
 ok = fail = 0
 fails = []
@@ -142,98 +141,12 @@ p = core.validate_flow([{"type": "move_wasd", "keys": "w", "ms": 0}], 0, 10)
 check("0 ms -> LỖI", any(x["severity"] == "error" and "lớn hơn 0" in x["message"]
                          for x in p), p)
 
-print("\n=== 7. Giao diện: tick hướng này thì hướng ngược tự bỏ ===")
-root = tk.Tk()
-root.withdraw()
-m.apply_theme(root)
-app = m.AutoClickerApp(root)
-root.update()
 
-ed = m.ActionEditor(root, app, None)
-ed.type_var.set("move_wasd")
-ed._render()
-root.update()
-check("mặc định chưa tick gì", ed._wasd_keys() == [], ed._wasd_keys())
+# ---------------------------------------------------------------------------
+# Phần kiểm GIAO DIỆN tkinter đã bỏ: giao diện đó không còn (bản web thay thế).
+# Luật hợp lệ của hành động giờ nằm ở `core.build_action`, kiểm trong
+# tests/test_do_thi_va_api.py §8 — dùng chung cho mọi giao diện.
+# ---------------------------------------------------------------------------
 
-ed.wasd_vars["w"].set(True)
-ed._wasd_toggled("w")
-check("tick W", ed._wasd_keys() == ["w"], ed._wasd_keys())
-ed.wasd_vars["s"].set(True)
-ed._wasd_toggled("s")
-check("tick S -> W TỰ BỎ (không thể có W+S)", ed._wasd_keys() == ["s"], ed._wasd_keys())
-ed.wasd_vars["a"].set(True)
-ed._wasd_toggled("a")
-check("thêm A -> thành S+A", ed._wasd_keys() == ["s", "a"], ed._wasd_keys())
-ed.wasd_vars["d"].set(True)
-ed._wasd_toggled("d")
-check("tick D -> A TỰ BỎ (không thể có A+D)", ed._wasd_keys() == ["s", "d"],
-      ed._wasd_keys())
-check("không đường nào tạo ra quá 2 phím", len(ed._wasd_keys()) <= 2, ed._wasd_keys())
-check("nhãn tóm tắt hiện đúng hướng + số giây",
-      "chéo xuống-phải" in ed.move_lbl["text"] and "giây" in ed.move_lbl["text"],
-      ed.move_lbl["text"])
-
-ed.move_ms_var.set("4000")
-ed._save()
-root.update()
-check("lưu ra đúng", ed.result == {"type": "move_wasd", "keys": "s+d", "ms": 4000},
-      ed.result)
-
-errs = []
-real = m.messagebox.showerror
-m.messagebox.showerror = lambda *a, **k: errs.append(a)
-ed = m.ActionEditor(root, app, None)
-ed.type_var.set("move_wasd")
-ed._render()
-ed._save()
-check("chưa tick hướng -> chặn lưu", ed.result is None and errs, (ed.result, errs))
-errs.clear()
-ed = m.ActionEditor(root, app, {"type": "move_wasd", "keys": "w", "ms": 100})
-root.update()
-ed.move_ms_var.set("0")
-ed._save()
-m.messagebox.showerror = real
-check("0 ms -> chặn lưu", ed.result is None and errs, (ed.result, errs))
-
-ed = m.ActionEditor(root, app, {"type": "move_wasd", "keys": "w+d", "ms": 2500})
-root.update()
-check("mở lại -> nạp đúng hướng", ed._wasd_keys() == ["w", "d"], ed._wasd_keys())
-check("mở lại -> nạp đúng ms", ed.move_ms_var.get() == "2500", ed.move_ms_var.get())
-ed.destroy()
-root.update()
-
-print("\n=== 8. Hoà vào hệ thống như mọi hành động khác ===")
-check("là loại hành động thứ 8", len(core.ACTION_TYPES) == 8, core.ACTION_TYPES)
-check("có trong danh sách loại", "move_wasd" in core.ACTION_TYPES)
-check("có nhãn hiển thị", core.ACTION_LABELS.get("move_wasd"), core.ACTION_LABELS)
-A = {"type": "move_wasd", "keys": "w", "ms": 1000}
-check("mô tả trong danh sách rõ nghĩa",
-      "W (lên)" in core.action_summary(A) and "1000ms" in core.action_summary(A),
-      core.action_summary(A))
-check("copy/dán bước nhận được hành động này",
-      app._sanitize_step({"kind": "group", "name": "N", "actions": [A]})["actions"] == [A],
-      app._sanitize_step({"kind": "group", "name": "N", "actions": [A]}))
-
-gui = FakeAutoGui()
-saved = core.pyautogui
-core.pyautogui = gui
-try:
-    step = {"kind": "group", "name": "Đi", "actions": [
-        {"type": "move_wasd", "keys": "w", "ms": 20},
-        {"type": "move_wasd", "keys": "a+s", "ms": 20}]}
-    r = core.ProcessRunner({"name": "T", "start_delay": 0, "pre_click_ms": 0, "hover_ms": 0,
-                            "copy_keys": "ctrl+c", "steps": [step]}, threading.Event())
-    status, loops = r.run()
-finally:
-    core.pyautogui = saved
-check("chạy trong Nhóm: đủ 2 hành động", len([e for e in gui.ev if e[0] == "down"]) == 3,
-      gui.ev)
-check("chạy xong không kẹt phím nào", gui.con_giu() == [], gui.con_giu())
-
-root.update()
-root.destroy()
-print(f"\n{'=' * 58}")
 print(f"KẾT QUẢ: {ok} đúng / {fail} sai")
-for f in fails:
-    print("   sai:", f)
 sys.exit(1 if fail else 0)

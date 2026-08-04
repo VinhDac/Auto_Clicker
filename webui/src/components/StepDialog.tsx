@@ -10,6 +10,14 @@ import ActionDialog from './ActionDialog'
  *  Nhóm dùng CHUNG khung này, chỉ tắt bớt: không số vòng, không giữ Shift, không dấu
  *  "Loop từ đây" — vì nhóm chạy đúng 1 lượt nên mấy thứ đó vô nghĩa.
  */
+/** Bộ nhớ tạm cho Ctrl+C / Ctrl+V hành động.
+ *
+ *  Cố ý KHÔNG dùng clipboard của hệ điều hành như bản tkinter: clipboard thật đang
+ *  được dùng cho luồng đọc chữ item (Ctrl+C trong game), trộn vào là có ngày paste
+ *  nhầm cả một item PoE vào danh sách hành động. Chép trong app là đủ — đó cũng là
+ *  cách dùng thật của tính năng này. */
+let boNho: Record<string, any>[] = []
+
 export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
   step: Step
   boot: Bootstrap
@@ -20,7 +28,10 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
   const laLoop = step.kind === 'loop'
   const [s, setS] = useState<Step>(() => JSON.parse(JSON.stringify(step)))
   const [dong, setDong] = useState<string[]>([])
-  const [chon, setChon] = useState(-1)
+  /** Chọn NHIỀU: Ctrl+click thêm/bớt, Shift+click chọn cả dải. */
+  const [chonDs, setChonDs] = useState<number[]>([])
+  const [keo, setKeo] = useState<number | null>(null)
+  const chon = chonDs.length ? chonDs[chonDs.length - 1] : -1
   const [suaHD, setSuaHD] = useState<{ i: number; a: Record<string, any> } | null>(null)
 
   const hd: Record<string, any>[] = (s.actions as Record<string, any>[]) ?? []
@@ -60,13 +71,52 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
     datHD(hd.map((v, k) => (k === i ? x : v)))
   }
 
-  function xoa(i: number) {
-    if (i < 0) return
-    datHD(hd.filter((_, k) => k !== i))
+  function bam(i: number, e: React.MouseEvent) {
+    if (e.shiftKey && chon >= 0) {
+      const [a, b] = [Math.min(chon, i), Math.max(chon, i)]
+      setChonDs(Array.from({ length: b - a + 1 }, (_, k) => a + k))
+    } else if (e.ctrlKey || e.metaKey) {
+      setChonDs(x => (x.includes(i) ? x.filter(v => v !== i) : [...x, i]))
+    } else {
+      setChonDs([i])
+    }
+  }
+
+  function xoa() {
+    if (!chonDs.length) return
+    const bo = new Set(chonDs)
+    datHD(hd.filter((_, k) => !bo.has(k)))
     // Xoá hành động NẰM TRƯỚC dấu "Loop từ đây" thì dấu phải lùi theo, nếu không
     // ranh giới chạy-1-lần / lặp âm thầm trượt sang hành động khác.
-    if (i < batDau) dat('loop_start_index', Math.max(0, batDau - 1))
-    setChon(-1)
+    const truoc = chonDs.filter(k => k < batDau).length
+    if (truoc) dat('loop_start_index', Math.max(0, batDau - truoc))
+    setChonDs([])
+  }
+
+  function chep() {
+    if (!chonDs.length) return
+    boNho = [...chonDs].sort((a, b) => a - b).map(i => JSON.parse(JSON.stringify(hd[i])))
+  }
+
+  function dan() {
+    if (!boNho.length) return
+    const tai = chon >= 0 ? chon + 1 : hd.length
+    // Dán ra BẢN SAO SÂU và bỏ id cũ: dán 2 lần mà dùng chung một object thì sửa
+    // cái này cái kia đổi theo.
+    const moi = boNho.map(a => { const x = JSON.parse(JSON.stringify(a)); delete x.id; return x })
+    datHD([...hd.slice(0, tai), ...moi, ...hd.slice(tai)])
+    setChonDs(moi.map((_, k) => tai + k))
+  }
+
+  /** Kéo-thả: đẩy dòng đang kéo vào vị trí dưới con trỏ (dịch, không đổi chỗ). */
+  function thaVao(dich: number) {
+    if (keo === null || keo === dich) return
+    const x = [...hd]
+    const [m] = x.splice(keo, 1)
+    x.splice(dich, 0, m)
+    datHD(x)
+    setChonDs([dich])
+    setKeo(null)
   }
 
   function chuyen(i: number, huong: number) {
@@ -75,7 +125,7 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
     const x = [...hd]
     ;[x[i], x[j]] = [x[j], x[i]]
     datHD(x)
-    setChon(j)
+    setChonDs([j])
   }
 
   useEffect(() => {
@@ -83,8 +133,11 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
       if (suaHD) return
       const o = e.target as HTMLElement
       if (o && (o.tagName === 'INPUT' || o.tagName === 'SELECT')) return
-      if (e.key === 'Delete') { e.preventDefault(); xoa(chon) }
+      const ctrl = e.ctrlKey || e.metaKey
+      if (e.key === 'Delete') { e.preventDefault(); xoa() }
       else if (e.key === 'F2') { e.preventDefault(); doiTen(chon) }
+      else if (ctrl && e.key.toLowerCase() === 'c') { e.preventDefault(); chep() }
+      else if (ctrl && e.key.toLowerCase() === 'v') { e.preventDefault(); dan() }
     }
     window.addEventListener('keydown', f)
     return () => window.removeEventListener('keydown', f)
@@ -119,14 +172,20 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
         </div>
 
         <div className="tieu-de-phu">
-          Hành động (double-click sửa • F2 đổi tên • Del xoá):
+          Hành động (double-click sửa • F2 đổi tên • Ctrl+C/Ctrl+V • Del xoá • kéo-thả):
         </div>
         <div className="khung-hd">
           <div className="danh-sach cao-10">
             {dong.map((x, i) => (
-              <div key={i}
-                   className={'muc' + (i === chon ? ' chon' : '') + (laLoop && i < batDau ? ' mo' : '')}
-                   onClick={() => setChon(i)} onDoubleClick={() => sua(i)}>
+              <div key={i} draggable
+                   onDragStart={() => setKeo(i)}
+                   onDragOver={e => e.preventDefault()}
+                   onDrop={() => thaVao(i)}
+                   onDragEnd={() => setKeo(null)}
+                   className={'muc' + (chonDs.includes(i) ? ' chon' : '')
+                              + (laLoop && i < batDau ? ' mo' : '')
+                              + (keo === i ? ' dang-keo' : '')}
+                   onClick={e => bam(i, e)} onDoubleClick={() => sua(i)}>
                 <span className="danh-hd">{laLoop ? (i < batDau ? '1×' : '↻') : ''}</span>
                 {x}{laLoop && i < batDau ? '   (1 lần)' : ''}
               </div>
@@ -137,7 +196,7 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
             <button className="nut" onClick={them}>+ Thêm</button>
             <button className="nut" disabled={chon < 0} onClick={() => sua(chon)}>✏ Sửa</button>
             <button className="nut" disabled={chon < 0} onClick={() => doiTen(chon)}>🏷 Đổi tên</button>
-            <button className="nut" disabled={chon < 0} onClick={() => xoa(chon)}>🗑 Xoá</button>
+            <button className="nut" disabled={!chonDs.length} onClick={xoa}>🗑 Xoá</button>
             <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, -1)}>⬆ Lên</button>
             <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, 1)}>⬇ Xuống</button>
             {laLoop && (

@@ -3,8 +3,8 @@ keyboard
 pyperclip
 plyer
 
-# Giao diện web mới (app_web.py). Mượn WebView2 có sẵn của Windows nên không kéo
-# theo trình duyệt nào. Bản tkinter cũ (auto_clicker_gui.py) KHÔNG cần gói này.
+# Giao diện (app_web.py + webui/). Mượn WebView2 có sẵn của Windows nên không kéo
+# theo trình duyệt nào.
 #
 # ⚠ PHẢI cài trong venv riêng của dự án (.venv), đừng cài vào Python global:
 #   gói `quantconnect-stubs` (nếu máy có) chiếm namespace `Microsoft` và làm

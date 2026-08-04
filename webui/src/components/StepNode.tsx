@@ -63,6 +63,7 @@ const SIDES: [string, Position][] = [
 
 export default function StepNode({ data, selected }: NodeProps) {
   const card = (data as { card: Card }).card
+  const thuTu = (data as { thuTu?: number }).thuTu
   const hien = card.lines.slice(0, TOI_DA_DONG)
   const con = card.lines.length - hien.length
 
@@ -81,7 +82,14 @@ export default function StepNode({ data, selected }: NodeProps) {
                 style={{ opacity: 0, pointerEvents: 'none' }} />
       ))}
 
-      <div className={'hop' + (selected ? ' dang-chon' : '')}>
+      <div className={'hop' + (selected ? ' dang-chon' : '') + (thuTu ? '' : ' khong-toi')}>
+        {/* Số THỨ TỰ CHẠY THẬT, do Python tính bằng chính phép duyệt của bộ máy.
+            Không có số = đường nối không dẫn tới khối này, nó sẽ KHÔNG chạy —
+            phải nhìn thấy được ngay, không thì lại rơi vào cảnh sơ đồ nói dối. */}
+        <div className={'so-thu-tu' + (thuTu ? '' : ' trong')}
+             title={thuTu ? `Chạy thứ ${thuTu}` : 'Không có đường nối dẫn tới — sẽ không chạy'}>
+          {thuTu ?? '–'}
+        </div>
         <div className="dau">
           <span className="dai-mau" style={{ background: MAU[card.kind] }} />
           <Icon kind={card.kind} />

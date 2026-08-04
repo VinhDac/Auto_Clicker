@@ -12,6 +12,9 @@ import Ribbon from './components/Ribbon'
 import StepNode from './components/StepNode'
 import StepDialog from './components/StepDialog'
 import ActionDialog from './components/ActionDialog'
+import SettingsDialog from './components/SettingsDialog'
+import TemplatePicker from './components/TemplatePicker'
+import type { MucMenu } from './components/Ribbon'
 
 const nodeTypes = { buoc: StepNode }
 
@@ -85,13 +88,27 @@ function Ung() {
   const [mods, setMods] = useState<string[]>([])
   /** Bước đang mở hộp thoại. Loop/Nhóm mở StepDialog, HĐ lẻ mở thẳng ActionDialog. */
   const [dangSua, setDangSua] = useState<string | null>(null)
-  const { fitView, zoomIn, zoomOut, getZoom } = useReactFlow()
+  /** {id khối -> số thứ tự chạy}. Do Python tính, không phải JS đếm. */
+  const [thuTu, setThuTu] = useState<Record<string, number>>({})
+  const [coVong, setCoVong] = useState(false)
+  const [moCaiDat, setMoCaiDat] = useState(false)
+  /** Hộp chọn template đang mở: kind + việc sẽ làm với cái được chọn. */
+  const [moPicker, setMoPicker] = useState<
+    { kind: 'process' | 'loop' | 'group'; tieuDe: string; xong: (t: string) => void } | null>(null)
+  const { fitView, zoomIn, zoomOut, getZoom, setCenter } = useReactFlow()
 
   const lui = useRef<Anh[]>([])
   const toi = useRef<Anh[]>([])
   const cuoiLog = useRef<HTMLDivElement>(null)
   const [coLui, setCoLui] = useState(false)
   const [coToi, setCoToi] = useState(false)
+
+  /** Đổi màu nhấn tức thì. Chỉ cần ghi đè một biến CSS — đây chính là lý do
+   *  theme dùng biến chứ không viết cứng màu ở từng chỗ. */
+  const doiMauNgay = useCallback((mau: string) => {
+    document.documentElement.style.setProperty('--accent', mau)
+    document.documentElement.style.setProperty('--accent-soft', mau + '2b')
+  }, [])
 
   const ghi = useCallback((m: string, tag?: string | null) => {
     const gio = new Date().toLocaleTimeString('vi-VN', { hour12: false })
@@ -137,6 +154,8 @@ function Ung() {
         const b = await py.bootstrap()
         if (!b.ok) { setTrangThai('lỗi bootstrap: ' + b.error); return }
         setBoot(b.value!)
+        const mau = (b.value!.settings as any)?.accent
+        if (mau) doiMauNgay(String(mau))
         // Nạp cả 3223 mod MỘT lần rồi lọc trong JS. Lọc ở Python theo từng phím gõ
         // thì mỗi ký tự là một vòng promise; đo được cả danh sách chỉ mất 7ms.
         py.get_mods().then(r => r.ok && setMods(r.value ?? []))
@@ -163,11 +182,17 @@ function Ung() {
   useEffect(() => {
     if (!sanSang) return
     const h = setTimeout(async () => {
-      const r = await py.validate(rf_sang_steps(nodes))
-      if (r.ok) setVanDe(r.value ?? [])
+      const r = await py.validate(rf_sang_steps(nodes), rf_sang_edges(edges))
+      if (!r.ok) return
+      setVanDe(r.value ?? [])
+      // Số thứ tự do PYTHON tính, bằng chính phép duyệt mà bộ máy chạy dùng —
+      // JS không tự đếm, nếu không con số lại nói khác thực tế.
+      const o = (r as any).order as Record<string, number>
+      setThuTu(o ?? {})
+      setCoVong(!!(r as any).loop)
     }, 250)   // gộp lại: kéo hộp bắn ra hàng chục thay đổi mỗi giây
     return () => clearTimeout(h)
-  }, [nodes, sanSang])
+  }, [nodes, edges, sanSang])
 
   /* Nhật ký tự cuộn xuống đáy — đang chạy mà phải cuộn tay thì không theo dõi nổi. */
   useEffect(() => {
@@ -295,19 +320,87 @@ function Ung() {
     else ghi('lưu hỏng: ' + r.error)
   }, [ten, nodes, edges, startDelay, ghi])
 
-  const mo = useCallback(async () => {
-    const ds = await py.list_templates('process')
-    if (!ds.ok || !ds.value?.length) { ghi('chưa có template Process nào'); return }
-    const t = window.prompt('Mở template nào?\n\n' + ds.value.join('\n'), ds.value[0])
-    if (!t) return
+  const moProcess = useCallback(async (t: string) => {
     const r = await py.load_process(t)
-    if (!r.ok || !r.value) { ghi('mở hỏng: ' + r.error); return }
+    if (!r.ok || !r.value) { ghi('mở hỏng: ' + r.error, 'err'); return }
     chup()
     const { nodes: n, edges: e } = doc_sang_rf(r.value)
     setNodes(n); setEdges(e); setTen(r.value.name); setStartDelay(r.value.start_delay)
     ghi(`mở template "${t}"`)
     setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 40)
   }, [chup, setNodes, setEdges, ghi, fitView])
+
+  /** Chèn 1 Loop/Nhóm có sẵn vào Process đang mở — KHÔNG thay cả Process. */
+  const chenBuoc = useCallback(async (kind: 'loop' | 'group', t: string) => {
+    const r = await py.insert_step_template(kind, t)
+    if (!r.ok || !r.value) { ghi('chèn hỏng: ' + r.error, 'err'); return }
+    chup()
+    const { step, card } = r.value
+    const x = nodes.length ? Math.max(...nodes.map(n => n.position.x)) + 420 : 80
+    setNodes(n => [...n.map(k => ({ ...k, selected: false })),
+      { id: step.id, type: 'buoc', position: { x, y: 120 }, data: { step, card }, selected: true }])
+    ghi(`chèn ${kind === 'loop' ? 'Loop' : 'Nhóm'} "${t}"`)
+  }, [nodes, chup, setNodes, ghi])
+
+  /** Lưu riêng bước đang chọn thành template Loop/Nhóm dùng lại được. */
+  const luuBuoc = useCallback(async (kind: 'loop' | 'group') => {
+    const n = dangChon[0]
+    if (!n) return
+    const st = (n.data as { step: Step }).step
+    const t = window.prompt(`Lưu ${kind === 'loop' ? 'Loop' : 'Nhóm'} với tên:`,
+                            String(st.name ?? ''))
+    if (!t) return
+    const r = await py.save_step_template(kind, t, st)
+    ghi(r.ok ? `đã lưu template ${kind} "${t}"` : 'lưu hỏng: ' + r.error, r.ok ? 'ok' : 'err')
+  }, [dangChon, ghi])
+
+  /** Đặt khối đang chọn làm bước CHẠY ĐẦU TIÊN.
+   *
+   *  `flow_entry` lấy bước đầu tiên trong danh sách mà KHÔNG có đường nối đi vào.
+   *  Nên phải làm cả hai: gỡ mọi đường nối đi vào nó, và đưa nó lên đầu danh sách.
+   *  Chỉ làm một trong hai thì bấm xong không thấy gì đổi — kiểu khó chịu nhất. */
+  const datBatDau = useCallback(() => {
+    const n = dangChon[0]
+    if (!n) return
+    chup()
+    setEdges(e => e.filter(k => k.target !== n.id))
+    setNodes(ds => [n, ...ds.filter(k => k.id !== n.id)])
+    ghi(`đặt "${(n.data as { card: Card }).card.title}" làm bước bắt đầu`, 'ok')
+  }, [dangChon, chup, setNodes, setEdges, ghi])
+
+  /** Mở Process từ file BẤT KỲ (ngoài thư mục templates/). */
+  const moFile = useCallback(async () => {
+    const r = await py.open_process_file()
+    if (!r.ok) { if (r.error) ghi('mở hỏng: ' + r.error, 'err'); return }
+    chup()
+    const { nodes: n, edges: e } = doc_sang_rf(r.value!)
+    setNodes(n); setEdges(e); setTen(r.value!.name); setStartDelay(r.value!.start_delay)
+    ghi('mở Process từ file ngoài')
+    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 40)
+  }, [chup, setNodes, setEdges, ghi, fitView])
+
+  const luuRaFile = useCallback(async () => {
+    const r = await py.save_process_file(ten, rf_sang_steps(nodes), rf_sang_edges(edges), startDelay)
+    if (r.ok) ghi(`đã lưu ra ${r.value?.path}`, 'ok')
+    else if (r.error) ghi('lưu hỏng: ' + r.error, 'err')
+  }, [ten, nodes, edges, startDelay, ghi])
+
+  const chenTuFile = useCallback(async (kind: 'loop' | 'group') => {
+    const r = await py.insert_step_file(kind)
+    if (!r.ok) { if (r.error) ghi('chèn hỏng: ' + r.error, 'err'); return }
+    chup()
+    const { step, card } = r.value!
+    const x = nodes.length ? Math.max(...nodes.map(n => n.position.x)) + 420 : 80
+    setNodes(n => [...n.map(k => ({ ...k, selected: false })),
+      { id: step.id, type: 'buoc', position: { x, y: 120 }, data: { step, card }, selected: true }])
+    ghi(`chèn ${kind} từ file ngoài`)
+  }, [nodes, chup, setNodes, ghi])
+
+  /** Phủ màn hình, chỉ ra mọi điểm sẽ bị click — soi lại trước khi chạy. */
+  const xemDiem = useCallback(async () => {
+    const r = await py.review_points(rf_sang_steps(nodes))
+    if (!r.ok) ghi(r.error ?? 'không xem được', 'warn')
+  }, [nodes, ghi])
 
   const noi = useCallback((c: Connection) => {
     if (c.source === c.target) return          // tự nối vào chính mình thì vô nghĩa
@@ -341,6 +434,34 @@ function Ung() {
   const batDauKeo = useCallback(() => { if (!dangKeo.current) { dangKeo.current = true; chup() } }, [chup])
   const ketThucKeo = useCallback(() => { dangKeo.current = false }, [])
 
+  /* Gắn số thứ tự vào node ngay trước khi vẽ. Không nhét vào state `nodes` để
+     đừng làm bẩn dữ liệu bước — số thứ tự là thứ TÍNH RA, không phải thuộc tính. */
+  const nodesCoSo = useMemo(
+    () => nodes.map(n => ({ ...n, data: { ...(n.data as object), thuTu: thuTu[n.id] } })),
+    [nodes, thuTu])
+
+  const buocChon = dangChon[0] ? (dangChon[0].data as { step: Step }).step : null
+  const laLoop = buocChon?.kind === 'loop'
+  const laNhom = buocChon?.kind === 'group'
+
+  const mucLuu: MucMenu[] = [
+    { nhan: '💾 Lưu cả Process thành template', chay: luu },
+    { nhan: '🔁 Lưu riêng Loop đang chọn', chay: () => luuBuoc('loop'),
+      tat: !laLoop, lyDo: 'chọn một Action_Loop trước' },
+    { nhan: '▤ Lưu riêng Nhóm đang chọn', chay: () => luuBuoc('group'),
+      tat: !laNhom, lyDo: 'chọn một Nhóm HĐ 1 lần trước' },
+    { nhan: '📄 Lưu ra file khác…', chay: luuRaFile },
+  ]
+  const mucMo: MucMenu[] = [
+    { nhan: '📂 Mở Process (thay toàn bộ)',
+      chay: () => setMoPicker({ kind: 'process', tieuDe: 'Mở Process', xong: t => { setMoPicker(null); moProcess(t) } }) },
+    { nhan: '➕ Chèn Loop có sẵn vào Process này',
+      chay: () => setMoPicker({ kind: 'loop', tieuDe: 'Chèn Action_Loop', xong: t => { setMoPicker(null); chenBuoc('loop', t) } }) },
+    { nhan: '➕ Chèn Nhóm có sẵn vào Process này',
+      chay: () => setMoPicker({ kind: 'group', tieuDe: 'Chèn Nhóm HĐ 1 lần', xong: t => { setMoPicker(null); chenBuoc('group', t) } }) },
+    { nhan: '📄 Mở từ file khác…', chay: moFile },
+  ]
+
   const soLoi = vanDe.filter(v => v.severity === 'error').length
   const soCanhBao = vanDe.length - soLoi
 
@@ -356,15 +477,17 @@ function Ung() {
         {dangChay && <span className="nhan dang-chay">● đang chạy — {phimDung} để dừng</span>}
         <button className="nut" onClick={dung} disabled={!dangChay}>■ Dừng</button>
         <button className="nut chinh" onClick={() => chay()} disabled={dangChay}>▶ Chạy</button>
+        <button className="nut" onClick={() => setMoCaiDat(true)} title="Cài đặt">⚙</button>
       </div>
 
       <Ribbon
         themLoop={() => themKhoi('loop')}
         themNhom={() => themKhoi('group')}
         themHanhDong={() => themKhoi('action')}
+        sua={() => dangChon[0] && setDangSua(dangChon[0].id)} datBatDau={datBatDau}
         doiTen={doiTen} nhanBan={nhanBan} xoa={xoa}
         hoanTac={hoanTac} lamLai={lamLai}
-        luu={luu} mo={mo}
+        mucLuu={mucLuu} mucMo={mucMo} xemDiem={xemDiem}
         vuaManHinh={() => fitView({ padding: 0.2, duration: 300 })}
         coChon={dangChon.length > 0}
         coTheHoanTac={coLui} coTheLamLai={coToi}
@@ -372,7 +495,7 @@ function Ung() {
 
       <div className="vung-canvas">
         <ReactFlow
-          nodes={nodes} edges={edges}
+          nodes={nodesCoSo} edges={edges}
           onNodesChange={onNodesChange as (c: NodeChange[]) => void}
           onEdgesChange={onEdgesChange as (c: EdgeChange[]) => void}
           onConnect={noi}
@@ -415,7 +538,20 @@ function Ung() {
             vanDe.length === 0
               ? <div className="trong">Không có vấn đề nào.</div>
               : vanDe.map((v, i) => (
-                <div key={i} className={'dong-van-de ' + (v.severity === 'error' ? 'loi' : 'canh-bao')}>
+                <div key={i}
+                     className={'dong-van-de ' + (v.severity === 'error' ? 'loi' : 'canh-bao')}
+                     title="Bấm để chọn khối bị lỗi"
+                     onClick={() => {
+                       // `step` có thể là CHỈ SỐ (lỗi trong bước) hoặc ID (lỗi đồ thị)
+                       const id = typeof v.step === 'number'
+                         ? nodes[v.step]?.id
+                         : (v.step as unknown as string)
+                       if (!id) return
+                       setNodes(ds => ds.map(k => ({ ...k, selected: k.id === id })))
+                       const n = nodes.find(k => k.id === id)
+                       if (n) setCenter(n.position.x + 148, n.position.y + 90,
+                                        { zoom: getZoom(), duration: 350 })
+                     }}>
                   <span className="muc">{v.severity === 'error' ? '●' : '▲'}</span>
                   <span>{v.message}</span>
                 </div>
@@ -440,12 +576,33 @@ function Ung() {
         <span><span className="so">{edges.length}</span> đường nối</span>
         {soLoi > 0 && <span style={{ color: 'var(--err)' }}>{soLoi} lỗi</span>}
         {soCanhBao > 0 && <span style={{ color: 'var(--warn)' }}>{soCanhBao} cảnh báo</span>}
+        {coVong && <span style={{ color: 'var(--warn)' }}>đường nối tạo vòng lặp</span>}
         <span className="day" />
         <span>{trangThai}</span>
         <button className="nut-nho" onClick={() => zoomOut()}>−</button>
         <span className="so">{Math.round(getZoom() * 100)}%</span>
         <button className="nut-nho" onClick={() => zoomIn()}>+</button>
       </div>
+
+      {moCaiDat && boot && (
+        <SettingsDialog boot={boot} doiMauNgay={doiMauNgay}
+                        onDong={() => setMoCaiDat(false)}
+                        onLuu={s2 => {
+                          setBoot(b => (b ? { ...b, settings: s2 } : b))
+                          setMoCaiDat(false)
+                          ghi('đã lưu cài đặt', 'ok')
+                        }} />
+      )}
+
+      {moPicker && (
+        <TemplatePicker kind={moPicker.kind} tieuDe={moPicker.tieuDe}
+                        onChon={moPicker.xong} onDong={() => setMoPicker(null)}
+                        onDuyetFile={() => {
+                          const k = moPicker.kind
+                          setMoPicker(null)
+                          if (k === 'process') moFile(); else chenTuFile(k)
+                        }} />
+      )}
 
       {dangSua && boot && (() => {
         const n = nodes.find(k => k.id === dangSua)

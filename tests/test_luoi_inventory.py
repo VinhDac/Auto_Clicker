@@ -7,7 +7,6 @@ import _boot  # noqa: F401  — đặt sys.path + thư mục làm việc
 from PIL import Image
 
 import core
-import auto_clicker_gui as m
 
 ok = fail = 0
 fails = []
@@ -31,7 +30,7 @@ CO_DO = {(0, 0), (0, 1), (1, 0), (1, 1), (1, 5), (2, 0), (2, 1), (2, 7),
          (3, 0), (3, 1), (4, 0), (4, 1)}
 
 
-def dung_anh(path="stash_sample.png"):
+def dung_anh(path="tests/anh/stash_sample.png"):
     """Giả lập màn hình = chính ảnh kho (toạ độ màn hình == toạ độ ảnh)."""
     img = Image.open(path).convert("RGB")
 
@@ -202,110 +201,12 @@ p = core.validate_flow([{"type": "right_click", "point": [1, 2],
 check("chưa tick ô nào -> LỖI",
       any(x["severity"] == "error" and "tick ô nào" in x["message"] for x in p), p)
 
-print("\n=== 8. Giao diện ===")
-root = tk.Tk()
-root.withdraw()
-m.apply_theme(root)
-app = m.AutoClickerApp(root)
-root.update()
 
-ed = m.ActionEditor(root, app, {"type": "right_click", "point": [56, 455]})
-root.update()
-check("mặc định TẮT nâng cao", ed.grid_on_var.get() is False)
-check("tắt -> X/Y bấm được, nút Căn lưới bị khoá",
-      str(ed.x_entry["state"]) == "normal" and str(ed.grid_btn["state"]) == "disabled",
-      (ed.x_entry["state"], ed.grid_btn["state"]))
-ed._save()
-root.update()
-check("tắt -> file KHÔNG có khoá grid thừa", "grid" not in ed.result, ed.result)
+# ---------------------------------------------------------------------------
+# Phần kiểm GIAO DIỆN tkinter đã bỏ: giao diện đó không còn (bản web thay thế).
+# Luật hợp lệ của hành động giờ nằm ở `core.build_action`, kiểm trong
+# tests/test_do_thi_va_api.py §8 — dùng chung cho mọi giao diện.
+# ---------------------------------------------------------------------------
 
-ed = m.ActionEditor(root, app, {"type": "right_click", "point": [56, 455]})
-root.update()
-ed.grid_on_var.set(True)
-ed._toggle_grid()
-root.update()
-check("bật -> X/Y bị khoá, nút Căn lưới mở",
-      str(ed.x_entry["state"]) == "disabled" and str(ed.grid_btn["state"]) == "normal",
-      (ed.x_entry["state"], ed.grid_btn["state"]))
-errs = []
-real = m.messagebox.showerror
-m.messagebox.showerror = lambda *a, **k: errs.append(a)
-ed._save()
-m.messagebox.showerror = real
-check("bật mà chưa căn lưới -> chặn lưu", ed.result is None and errs, (ed.result, errs))
-
-A = {"type": "right_click", "point": [0, 0],
-     "grid": {"frame": FRAME, "cells": [[0, 0], [0, 1], [1, 0]]}}
-ed = m.ActionEditor(root, app, A)
-root.update()
-check("mở lại -> tự bật nâng cao", ed.grid_on_var.get() is True)
-check("mở lại -> đúng 3 ô", ed.grid_cells == [[0, 0], [0, 1], [1, 0]], ed.grid_cells)
-check("nhãn hiện số ô đã tick", "3 ô" in ed.grid_lbl["text"], ed.grid_lbl["text"])
-ed._save()
-root.update()
-check("lưu lại nguyên vẹn", ed.result["grid"] == A["grid"], ed.result)
-check("mô tả trong danh sách nói rõ", "3 ô" in core.action_summary(ed.result),
-      core.action_summary(ed.result))
-
-check("loại khác KHÔNG có tuỳ chọn này", not hasattr(
-    m.ActionEditor(root, app, {"type": "left_click", "point": [1, 2]}), "grid_btn")
-    or True)   # left_click không dựng nút -> chỉ cần không văng lỗi
-
-print("\n=== 9. Overlay căn lưới ===")
-res = []
-sel = m.InvGridSelector(root, FRAME, [[0, 0]], res.append)
-root.update()
-check("nạp đúng khung", (sel.fx, sel.fy, sel.fw, sel.fh) == tuple(FRAME),
-      (sel.fx, sel.fy, sel.fw, sel.fh))
-check("nạp đúng ô đã tick", sel.cells == [(0, 0)], sel.cells)
-check("khoá đúng tỉ lệ lưới", abs(sel.fw / sel.fh - core.INV_ASPECT) < 0.02,
-      sel.fw / sel.fh)
-
-
-class E:
-    pass
-
-
-e = E()
-# bấm vào ô (2,3): tâm ô theo toạ độ canvas
-bx, by = core.inv_cell_point(FRAME, 2, 3)
-e.x, e.y = bx - sel.vx, by - sel.vy
-sel._press(e)
-sel._release(e)
-check("bấm vào ô -> tick thêm", sel.cells == [(0, 0), (2, 3)], sel.cells)
-sel._press(e)
-sel._release(e)
-check("bấm lại -> bỏ tick", sel.cells == [(0, 0)], sel.cells)
-
-# kéo xa hơn ngưỡng -> di chuyển khung, KHÔNG tick
-truoc = list(sel.cells)
-sel._press(e)
-e2 = E()
-e2.x, e2.y = e.x + 40, e.y + 40
-sel._motion(e2)
-sel._release(e2)
-check("kéo khung thì không lỡ tick ô nào", sel.cells == truoc, sel.cells)
-check("kéo khung thì khung có dịch thật", (sel.fx, sel.fy) != (FRAME[0], FRAME[1]),
-      (sel.fx, sel.fy))
-
-sel._clear()
-check("phím C xoá hết ô đã tick", sel.cells == [], sel.cells)
-sel.cells = [(1, 1)]
-sel._finish(True)
-root.update()
-check("Enter trả về (khung, danh sách ô)",
-      res and len(res[0]) == 2 and res[0][1] == [[1, 1]], res)
-
-res2 = []
-sel2 = m.InvGridSelector(root, FRAME, [], res2.append)
-sel2._finish(False)
-root.update()
-check("Esc trả về None", res2 == [None], res2)
-
-root.update()
-root.destroy()
-print(f"\n{'=' * 58}")
 print(f"KẾT QUẢ: {ok} đúng / {fail} sai")
-for f in fails:
-    print("   sai:", f)
 sys.exit(1 if fail else 0)

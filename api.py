@@ -129,8 +129,16 @@ class Api:
     """Đối tượng được gắn vào `window.pywebview.api` phía JS."""
 
     def __init__(self):
-        self.window = None            # app_web.py gán vào sau khi tạo cửa sổ
-        self.stop_flag = threading.Event()
+        # ⚠ MỌI thuộc tính không-phải-hàm PHẢI bắt đầu bằng "_".
+        #
+        # pywebview dựng danh sách hàm cho JS bằng `get_functions()` (webview/util.py):
+        # nó duyệt `dir(js_api)` và ĐỆ QUY vào mọi thuộc tính không callable. Gán
+        # `self._window = <Window>` làm nó bò vào chính đối tượng cửa sổ và đọc các
+        # property như `width`/`x`/`title` — mà mấy property đó hỏi ngược luồng giao
+        # diện, đúng luồng đang bị chặn để chờ. Kết quả: cửa sổ KHÔNG BAO GIỜ bơm
+        # thông điệp nữa, Windows báo "Not Responding". Tên có "_" thì bị bỏ qua.
+        self._window = None           # app_web.py gán vào sau khi tạo cửa sổ
+        self._stop_flag = threading.Event()
         self._runner = None
         self._thread = None
         self._hang = queue.Queue()    # hàng đợi dòng nhật ký
@@ -142,10 +150,10 @@ class Api:
     def _ban(self, ten, du_lieu):
         """Gọi `window.__su_kien(ten, dulieu)` bên JS. Nuốt mọi lỗi: cửa sổ có thể
         đã đóng giữa chừng, mà worker thì không được phép chết vì chuyện đó."""
-        if not self.window:
+        if not self._window:
             return
         try:
-            self.window.evaluate_js(
+            self._window.evaluate_js(
                 f"window.__su_kien && window.__su_kien({json.dumps(ten)},"
                 f"{json.dumps(du_lieu, ensure_ascii=False)})")
         except Exception:
@@ -191,11 +199,11 @@ class Api:
         hiểu là Shift+F6 và không khớp — hỏng đúng lúc cần dừng nhất. `on_press_key`
         bắt theo scan code nên kệ phím bổ trợ."""
         try:
-            self._hotkey = core.keyboard.add_hotkey(phim, self.stop_flag.set)
+            self._hotkey = core.keyboard.add_hotkey(phim, self._stop_flag.set)
         except Exception:
             self._hotkey = None
         try:
-            self._hotkey_raw = core.keyboard.on_press_key(phim, lambda _e: self.stop_flag.set())
+            self._hotkey_raw = core.keyboard.on_press_key(phim, lambda _e: self._stop_flag.set())
         except Exception:
             self._hotkey_raw = None
 
@@ -246,7 +254,7 @@ class Api:
             "stop_hotkey": s.get("stop_hotkey", "f6"),
         }
 
-        self.stop_flag.clear()
+        self._stop_flag.clear()
         while not self._hang.empty():        # dọn hàng đợi của lần chạy trước
             self._hang.get_nowait()
         self._dat_hotkey(cfg["stop_hotkey"])
@@ -261,7 +269,7 @@ class Api:
             trang_thai = "Đã dừng"
             so_vong = 0
             try:
-                self._runner = core.ProcessRunner(cfg, self.stop_flag,
+                self._runner = core.ProcessRunner(cfg, self._stop_flag,
                                                   on_status=ghi_trang_thai, on_log=ghi_log)
                 trang_thai, so_vong = self._runner.run()
             except BaseException as e:
@@ -285,7 +293,7 @@ class Api:
 
     @_bat_loi
     def stop(self):
-        self.stop_flag.set()
+        self._stop_flag.set()
         return {"ok": True}
 
     @_bat_loi
@@ -295,7 +303,7 @@ class Api:
     def dong_app(self):
         """app_web.py gọi khi đóng cửa sổ: dừng chạy, thả phím, gỡ hotkey.
         Không có bước này thì Shift có thể kẹt trong cả Windows sau khi tắt app."""
-        self.stop_flag.set()
+        self._stop_flag.set()
         try:
             if self._runner:
                 self._runner.release_held_keys()
@@ -326,6 +334,12 @@ class Api:
             "mod_keys": list(core.MOD_KEYS),
             "hybrid_labels": dict(core.HYBRID_LABELS),
             "abyss_max_rerolls": core.ABYSS_MAX_REROLLS,
+            "games": dict(core.GAMES),
+            "accent_presets": {
+                "Cam": "#ffa657", "Xanh dương": "#4a9eff", "Lục": "#3fb950",
+                "Tím": "#a371f7", "Đỏ": "#f85149", "Vàng": "#d29922",
+                "Hồng": "#db61a2", "Xanh ngọc": "#39c5cf",
+            },
             "default_max_loops": core.DEFAULT_MAX_LOOPS,
             "screen": list(core.virtual_screen_rect()),
             "has_clip": bool(core.HAS_CLIP),
@@ -459,6 +473,140 @@ class Api:
         data["cards"] = [_the_buoc(s) for s in data["steps"]]
         return {"ok": True, "value": data}
 
+    # ---------------- mở / lưu ra FILE bất kỳ ----------------
+    # Bản tkinter có "📄 Lưu ra file khác…" / "📄 Mở từ file khác…" / "📂 Duyệt file
+    # khác…" để làm việc với file nằm ngoài thư mục templates/ (chép từ bạn bè, để
+    # trên Desktop…). Dùng hộp thoại file NATIVE của pywebview, không tự chế.
+    _LOC = ("Template Auto Clicker (*.json)", "*.json")
+
+    @_bat_loi
+    def open_process_file(self):
+        if not self._window:
+            return {"ok": False, "error": "chưa sẵn sàng"}
+        ds = self._window.create_file_dialog(0, file_types=(self._LOC,))   # OPEN_DIALOG
+        if not ds:
+            return {"ok": False}                    # người dùng bấm Huỷ — không phải lỗi
+        data = core.normalize_process(core.read_json(ds[0]))
+        data["cards"] = [_the_buoc(s) for s in data["steps"]]
+        return {"ok": True, "value": data}
+
+    @_bat_loi
+    def save_process_file(self, name, steps, edges=None, start_delay=3):
+        if not self._window:
+            return {"ok": False, "error": "chưa sẵn sàng"}
+        goi_y = core.safe_filename(name or "Process 1") + ".json"
+        d = self._window.create_file_dialog(2, save_filename=goi_y,   # SAVE_DIALOG
+                                            file_types=(self._LOC,))
+        if not d:
+            return {"ok": False}
+        path = d if isinstance(d, str) else d[0]
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        s = core.load_settings()
+        core.write_json(path, core.make_process_template(
+            name, s.get("game", "poe2"), start_delay, steps or [], edges))
+        return {"ok": True, "value": {"path": path}}
+
+    @_bat_loi
+    def insert_step_file(self, kind):
+        """Chèn 1 Loop/Nhóm từ file bất kỳ ngoài thư mục templates/."""
+        if not self._window:
+            return {"ok": False, "error": "chưa sẵn sàng"}
+        ds = self._window.create_file_dialog(0, file_types=(self._LOC,))
+        if not ds:
+            return {"ok": False}
+        data = core.read_json(ds[0])
+        st = (core.normalize_loop_template(data) if kind == "loop"
+              else core.normalize_group_template(data))
+        if st is None:
+            khac = "Mở Process" if data.get("type") == "process" else "menu tương ứng"
+            return {"ok": False,
+                    "error": f"File này không phải template {kind} — hãy dùng {khac}."}
+        st["id"] = core.new_step_id()
+        return {"ok": True, "value": {"step": st, "card": _the_buoc(st)}}
+
+    @_bat_loi
+    def delete_template(self, kind, name):
+        path = core.template_path(kind, name)
+        if not os.path.exists(path):
+            return {"ok": False, "error": f'Không có template "{name}"'}
+        os.remove(path)
+        return {"ok": True}
+
+    @_bat_loi
+    def save_step_template(self, kind, name, step):
+        """Lưu RIÊNG một Loop hoặc một Nhóm thành template dùng lại được."""
+        ten = (name or "").strip()
+        if not ten:
+            return {"ok": False, "error": "Tên template không được để trống"}
+        s = core.load_settings()
+        if kind == "loop":
+            if step.get("kind") != "loop":
+                return {"ok": False, "error": "Bước đang chọn không phải Action_Loop"}
+            doc = core.make_loop_template(step, s.get("game", "poe2"))
+        elif kind == "group":
+            if step.get("kind") != "group":
+                return {"ok": False, "error": "Bước đang chọn không phải Nhóm HĐ 1 lần"}
+            doc = core.make_group_template(step, s.get("game", "poe2"))
+        else:
+            return {"ok": False, "error": f'Loại template không hợp lệ: "{kind}"'}
+        core.write_json(core.template_path(kind, ten), doc)
+        return {"ok": True, "value": {"name": ten}}
+
+    @_bat_loi
+    def insert_step_template(self, kind, name):
+        """Đọc 1 template Loop/Nhóm để CHÈN vào Process đang mở.
+
+        Chèn nhầm loại thì báo rõ phải dùng menu nào — `normalize_*_template` trả None
+        cho file sai loại, nên nhầm lẫn bị bắt chứ không âm thầm làm méo dữ liệu."""
+        path = core.template_path(kind, name)
+        if not os.path.exists(path):
+            return {"ok": False, "error": f'Không có template "{name}"'}
+        data = core.read_json(path)
+        st = (core.normalize_loop_template(data) if kind == "loop"
+              else core.normalize_group_template(data))
+        if st is None:
+            khac = "Mở Process" if data.get("type") == "process" else "menu tương ứng"
+            return {"ok": False,
+                    "error": f'"{name}" không phải template {kind} — hãy dùng {khac}.'}
+        st["id"] = core.new_step_id()
+        return {"ok": True, "value": {"step": st, "card": _the_buoc(st)}}
+
+    @_bat_loi
+    def review_points(self, steps):
+        """Phủ màn hình, vẽ MỌI điểm sẽ được click — để soi lại trước khi chạy.
+
+        Gom điểm ở đây (Python) chứ không ở JS: riêng Abyss không có một điểm mà cả
+        một khung, phải suy ra 3 ô mod + CONFIRM + nút refresh bằng `abyss_regions`."""
+        pts = []
+
+        def them(a, nhan):
+            if a.get("type") == "abyss":
+                fr = a.get("frame")
+                if not fr:
+                    return
+                r = core.abyss_regions(fr)
+                for i, p in enumerate(r["band_points"], 1):
+                    pts.append([p[0], p[1], f"{nhan} · mod {i}", "ok"])
+                pts.append([r["confirm"][0], r["confirm"][1], f"{nhan} · CONFIRM", "accent"])
+                pts.append([r["refresh_point"][0], r["refresh_point"][1], f"{nhan} · ↻", "warn"])
+                return
+            pt = a.get("point")
+            if pt:
+                pts.append([pt[0], pt[1], nhan,
+                            "ok" if a.get("type") == "check_mod" else "accent"])
+
+        for si, st in enumerate(steps or [], 1):
+            if core.has_actions(st):
+                for i, a in enumerate(st.get("actions") or [], 1):
+                    them(a, f"{si}.{i} {core.step_title(st)}")
+            else:
+                them(st, f"{si} {core.step_title(st)}")
+
+        if not pts:
+            return {"ok": False, "error": "Chưa có điểm nào để xem"}
+        return self._chay_overlay("review", ["--points", json.dumps(pts, ensure_ascii=False)])
+
     @_bat_loi
     def save_process(self, name, steps, edges=None, start_delay=3):
         """Ghi template Process. Định dạng do `core.make_process_template` quyết định."""
@@ -474,13 +622,61 @@ class Api:
 
     # ---------------- kiểm tra ----------------
     @_bat_loi
-    def validate(self, steps):
-        """Trả về danh sách vấn đề cho bảng ⚠ Vấn đề. Dùng CHÍNH hàm mà app cũ dùng,
-        nên hai giao diện không bao giờ bất đồng về việc thế nào là hợp lệ."""
-        probs = core.validate_process(steps or [])
+    def validate(self, steps, edges=None):
+        """Vấn đề + THỨ TỰ CHẠY, gói trong một lần gọi.
+
+        Số thứ tự tính bằng `core.flow_order` — CHÍNH phép duyệt mà `ProcessRunner`
+        dùng. Nhờ vậy con số hiện ở góc khối không thể nói khác việc app thực sự làm;
+        trước đây canvas vẽ một đằng, bộ máy chạy theo thứ tự tạo khối một nẻo.
+
+        Gộp chung để chỉ tốn một vòng IPC — kéo một cái hộp là bắn ra hàng chục
+        thay đổi, tách hai lần gọi thì gấp đôi số vòng.
+        """
+        steps = steps or []
+        probs = core.validate_process(steps, edges=edges)
+        luong = core.flow_order(steps, edges if edges is not None else core.default_edges(steps))
         return {"ok": True, "value": probs,
                 "so_loi": sum(1 for p in probs if p.get("severity") == "error"),
-                "so_canh_bao": sum(1 for p in probs if p.get("severity") != "error")}
+                "so_canh_bao": sum(1 for p in probs if p.get("severity") != "error"),
+                "order": luong["order"], "unreachable": luong["unreachable"],
+                "entry": luong["entry"], "loop": luong["loop"]}
+
+    # ---------------- cài đặt ----------------
+    @_bat_loi
+    def save_settings(self, s):
+        """Ghi settings.json. Kiểm kiểu ở đây chứ không tin dữ liệu từ form."""
+        cu = core.load_settings()
+        game = s.get("game")
+        if game not in core.GAMES:
+            return {"ok": False, "error": f'Game không hợp lệ: "{game}"'}
+        try:
+            pre = max(0, int(s.get("pre_click_ms") or 0))
+            hov = max(0, int(s.get("hover_ms") or 0))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Delay / Chờ tooltip phải là số"}
+        phim = str(s.get("stop_hotkey") or "").strip() or "f6"
+        if not core.is_valid_key(phim):
+            # pyautogui.keyDown với tên phím sai IM LẶNG không làm gì — đặt nhầm phím
+            # dừng thì phát hiện ra đúng lúc đang cần dừng gấp.
+            return {"ok": False, "error": f'Không có phím tên "{phim}"'}
+        cu.update({
+            "game": game, "pre_click_ms": pre, "hover_ms": hov,
+            "copy_keys": str(s.get("copy_keys") or "").strip() or "ctrl+c",
+            "stop_hotkey": phim,
+            "accent": str(s.get("accent") or "").strip() or cu.get("accent", "#ffa657"),
+        })
+        core.save_settings(cu)
+        return {"ok": True, "value": cu}
+
+    @_bat_loi
+    def update_mods(self, game=None):
+        """Tải lại danh sách mod từ API trade. Chạy đồng bộ — JS đã `await` sẵn,
+        và người dùng đang đứng chờ ở hộp thoại nên không cần luồng riêng."""
+        g = game or core.load_settings().get("game", "poe2")
+        texts = core.fetch_mod_texts(g)
+        with open(core.writable_data_path(f"mods_{g}.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(texts))
+        return {"ok": True, "value": {"game": g, "so_luong": len(texts)}}
 
     # ---------------- danh sách mod ----------------
     @_bat_loi

@@ -5,7 +5,6 @@ import tkinter as tk
 
 import _boot  # noqa: F401  — đặt sys.path + thư mục làm việc
 import core
-import auto_clicker_gui as m
 
 ok = fail = 0
 fails = []
@@ -221,63 +220,12 @@ p = core.abyss_problems(act(conditions=[{"mod": M_COLD}], excludes=[{"mod": M_CA
 check("không mâu thuẫn -> không cảnh báo chuyện đó",
       not any("loại trừ" in x["message"] for x in p), p)
 
-print("\n=== 9. Giao diện: bảng loại trừ ===")
-root = tk.Tk()
-root.withdraw()
-m.apply_theme(root)
-app = m.AutoClickerApp(root)
-root.update()
 
-A = {"type": "abyss", "frame": list(FRAME), "conditions": [{"mod": M_LIFE}],
-     "rerolls": 1, "wait_ms": 0,
-     "excludes": [{"mod": M_COLD}, {"mod": M_CAST}]}
-ed = m.ActionEditor(root, app, A)
-root.update()
-check("nạp đúng 2 dòng loại trừ", len(ed.excludes) == 2, ed.excludes)
-check("bảng loại trừ hiện đủ 2 dòng", ed.excl_box.size() == 2,
-      [ed.excl_box.get(i) for i in range(ed.excl_box.size())])
-check("hiện tên mod", M_COLD in ed.excl_box.get(0), ed.excl_box.get(0))
+# ---------------------------------------------------------------------------
+# Phần kiểm GIAO DIỆN tkinter đã bỏ: giao diện đó không còn (bản web thay thế).
+# Luật hợp lệ của hành động giờ nằm ở `core.build_action`, kiểm trong
+# tests/test_do_thi_va_api.py §8 — dùng chung cho mọi giao diện.
+# ---------------------------------------------------------------------------
 
-ed.search_var.set("#% to fire resistance")
-ed._refresh_mods()
-idx = next((i for i in range(ed.master_box.size())
-            if ed.master_box.get(i) == "#% to Fire Resistance"), None)
-check("tìm được mod trong danh sách", idx is not None, idx)
-ed.master_box.selection_set(idx)
-ed._add_exclude()
-check("thêm vào loại trừ được", len(ed.excludes) == 3, ed.excludes)
-ed.master_box.selection_clear(0, tk.END)
-ed.master_box.selection_set(idx)
-ed._add_exclude()
-check("thêm trùng -> không nhân đôi", len(ed.excludes) == 3, ed.excludes)
-
-ed.excl_box.selection_set(0)
-ed._del_exclude()
-check("xoá dòng loại trừ được", len(ed.excludes) == 2, ed.excludes)
-
-ed._save()
-root.update()
-check("lưu ra có khoá excludes", ed.result.get("excludes") == ed.excludes, ed.result)
-
-ed2 = m.ActionEditor(root, app, dict(A, excludes=[]))
-root.update()
-ed2._save()
-root.update()
-check("không có dòng loại trừ nào -> KHÔNG ghi khoá thừa vào file",
-      "excludes" not in ed2.result, ed2.result)
-
-ed3 = m.ActionEditor(root, app, None)
-root.update()
-ed3.type_var.set("abyss")
-ed3._render()
-root.update()
-check("hộp thoại mới: bảng loại trừ trống, không lỗi", ed3.excl_box.size() == 0)
-ed3.destroy()
-root.update()
-root.destroy()
-
-print(f"\n{'=' * 58}")
 print(f"KẾT QUẢ: {ok} đúng / {fail} sai")
-for f in fails:
-    print("   sai:", f)
 sys.exit(1 if fail else 0)
