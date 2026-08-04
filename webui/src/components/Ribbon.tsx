@@ -75,7 +75,11 @@ const I = {
   save: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4.5 5.8A1.3 1.3 0 0 1 5.8 4.5h8.4l3.3 3.3v8.4a1.3 1.3 0 0 1-1.3 1.3H5.8a1.3 1.3 0 0 1-1.3-1.3z" /><path {...S} d="M7.5 4.5v4h6v-4M7.5 17.5v-4h7v4" /></svg>,
   open: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M3.5 17V6.5A1 1 0 0 1 4.5 5.5h4l2 2.2h6a1 1 0 0 1 1 1V17z" /><path {...S} d="M3.5 17l2.6-6h13l-2.6 6z" /></svg>,
   edit: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="3.5" y="3.5" width="15" height="15" rx="2" /><path {...S} d="M7.5 13.5l6-6M11 6.5l4 4" /></svg>,
-  play: <svg viewBox="0 0 22 22" width="22" height="22"><circle {...S} cx="11" cy="11" r="7.5" /><path {...S} d="M9 7.5l5.5 3.5L9 14.5z" /></svg>,
+  // Số ① — CỐ Ý không dùng hình tam giác play: nút ▶ Chạy ở ngay cạnh, hai biểu
+  // tượng play trong một ribbon thì không ai đoán được cái nào làm gì.
+  // Hình này khớp với con số đang hiện ở góc khối, nhìn là hiểu.
+  motSo: <svg viewBox="0 0 22 22" width="22" height="22"><circle {...S} cx="11" cy="11" r="7.8" />
+           <path {...S} d="M9.6 8.6L11.4 7.4v7.4M9.8 14.8h3.4" /></svg>,
   eye: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M2.5 11S5.8 5.5 11 5.5 19.5 11 19.5 11 16.2 16.5 11 16.5 2.5 11 2.5 11z" /><circle {...S} cx="11" cy="11" r="2.6" /></svg>,
   fit: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4 8V4.5h3.5M18 8V4.5h-3.5M4 14v3.5h3.5M18 14v3.5h-3.5" /><rect {...S} x="8" y="8" width="6" height="6" rx="1" /></svg>,
 }
@@ -94,7 +98,13 @@ export interface RibbonProps {
   mucLuu: MucMenu[]
   mucMo: MucMenu[]
   xemDiem: () => void
-  vuaManHinh: () => void
+  // cụm chạy ghim mép phải ribbon (trước đây là cả một dải ngang riêng)
+  startDelay: number
+  datStartDelay: (v: number) => void
+  chay: () => void
+  dung: () => void
+  dangChay: boolean
+  moCaiDat: () => void
   coChon: boolean
   coTheHoanTac: boolean
   coTheLamLai: boolean
@@ -118,8 +128,10 @@ export default function Ribbon(p: RibbonProps) {
       </Nhom>
 
       <Nhom ten="Luồng">
-        <Nut ten="Bắt đầu" icon={I.play} onClick={p.datBatDau} tat={!p.coChon}
-             title="Đặt khối đang chọn làm bước chạy đầu tiên (số 1)" />
+        <Nut ten="Đặt số ①" icon={I.motSo} onClick={p.datBatDau} tat={!p.coChon}
+             title="Biến khối đang chọn thành khối ① — khối chạy đầu tiên" />
+        <Nut ten="Xem điểm" icon={I.eye} onClick={p.xemDiem}
+             title="Phủ màn hình, chỉ ra mọi điểm sẽ được click" />
       </Nhom>
 
       <Nhom ten="Hoàn tác">
@@ -132,11 +144,19 @@ export default function Ribbon(p: RibbonProps) {
         <NutMenu ten="Mở" icon={I.open} muc={p.mucMo} />
       </Nhom>
 
-      <Nhom ten="Xem">
-        <Nut ten="Xem điểm" icon={I.eye} onClick={p.xemDiem}
-             title="Phủ màn hình, chỉ ra mọi điểm sẽ được click" />
-        <Nut ten="Vừa khung" icon={I.fit} onClick={p.vuaManHinh} title="Thu phóng cho vừa toàn bộ sơ đồ" />
-      </Nhom>
+      {/* Cụm chạy — ghim mép phải. Trước đây chiếm cả một dải ngang 46px riêng,
+          trong khi bên phải ribbon bỏ trống 254px. */}
+      <div className="cum-chay">
+        <label className="nhan-cho" title="Chờ bao nhiêu giây trước khi bắt đầu, để kịp chuyển sang cửa sổ game">
+          Chờ
+          <input className="o so nho" value={p.startDelay}
+                 onChange={e => p.datStartDelay(Math.max(0, parseInt(e.target.value) || 0))} />
+          s
+        </label>
+        <button className="nut" onClick={p.dung} disabled={!p.dangChay}>■ Dừng</button>
+        <button className="nut chinh" onClick={p.chay} disabled={p.dangChay}>▶ Chạy</button>
+        <button className="nut nut-icon" onClick={p.moCaiDat} title="Cài đặt">⚙</button>
+      </div>
     </div>
   )
 }

@@ -11,6 +11,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Tiêu đề lúc mở. Sau đó JS ghi đè thành "<tên Process> — Auto Clicker".
+TIEU_DE_GOC = "Auto Clicker"
+
 
 def _giai_quyet_co_overlay():
     """Khi đóng gói .exe sẽ không có python.exe để chạy `overlays.py`, nên api.py gọi
@@ -33,12 +36,16 @@ def duong_dan_giao_dien():
     return os.path.join(HERE, "webui", "dist", "index.html")
 
 
-def thanh_tieu_de_toi(tieu_de):
+def thanh_tieu_de_toi(chua_chuoi=TIEU_DE_GOC):
     """Bôi đen thanh tiêu đề Windows cho khớp giao diện tối.
 
     Cùng mẹo DwmSetWindowAttribute mà bản tkinter đang dùng. Phải tìm cửa sổ theo
     EnumWindows chứ không FindWindowW: tiêu đề có dấu gạch dài "—" và tiếng Việt,
-    FindWindowW hay trả 0 (đã dính ở bản tkinter)."""
+    FindWindowW hay trả 0 (đã dính ở bản tkinter).
+
+    So khớp CHUỖI CON, không khớp tuyệt đối: tiêu đề đổi theo tên Process
+    ("Process mẫu — Auto Clicker"), nên khớp tuyệt đối là thua ngay khi JS đổi tên —
+    và trước đây nó chỉ đúng nhờ chạy kịp trước lúc đổi."""
     import ctypes
     from ctypes import wintypes
     try:
@@ -51,7 +58,7 @@ def thanh_tieu_de_toi(tieu_de):
             if n:
                 buf = ctypes.create_unicode_buffer(n + 1)
                 u.GetWindowTextW(hwnd, buf, n + 1)
-                if buf.value == tieu_de and u.IsWindowVisible(hwnd):
+                if chua_chuoi in buf.value and u.IsWindowVisible(hwnd):
                     tim.append(hwnd)
             return True
 
@@ -72,10 +79,9 @@ def main():
               file=sys.stderr)
         return 1
 
-    TIEU_DE = "Auto Clicker — PoE2"
     api = Api()
     win = webview.create_window(
-        TIEU_DE,
+        TIEU_DE_GOC,
         url=trang,
         js_api=api,
         width=1280, height=820,
@@ -93,13 +99,15 @@ def main():
     def sau_khi_mo():
         import time
         time.sleep(0.35)                  # đợi cửa sổ được map xong mới bôi đen được
-        thanh_tieu_de_toi(TIEU_DE)
+        thanh_tieu_de_toi()
 
-    # debug=True bật DevTools Chromium đầy đủ. Đây là thứ bản tkinter không bao giờ có —
-    # trước đây phải LẤY MẪU PIXEL trên ảnh chụp màn hình mới biết màu có đúng không.
+    # debug MẶC ĐỊNH TẮT. Bật lên thì pywebview mở luôn cửa sổ DevTools đè lên app —
+    # tiện cho người viết code, nhưng người dùng thì chẳng hiểu cửa sổ đó ở đâu ra.
+    # Cần dò lỗi thì:  set AUTOCLICKER_DEBUG=1  rồi chạy lại.
+    debug = os.environ.get("AUTOCLICKER_DEBUG", "") not in ("", "0", "false")
     # http_server=True: trang build ra dùng ES module, nạp qua file:// thì Chromium chặn
     # vì CORS (origin "null") -> trang trắng. Phục vụ qua http://127.0.0.1 là hết.
-    webview.start(sau_khi_mo, debug=True, http_server=True)
+    webview.start(sau_khi_mo, debug=debug, http_server=True)
     return 0
 
 

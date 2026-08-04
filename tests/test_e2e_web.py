@@ -33,7 +33,8 @@ pyautogui.PAUSE = 0.2
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
-TIEU_DE = "Auto Clicker — PoE2"
+# Khớp CHUỖI CON: tiêu đề đổi theo tên Process ("Process mẫu — Auto Clicker").
+TIEU_DE = "Auto Clicker"
 
 u = ctypes.windll.user32
 u.IsHungAppWindow.argtypes = [wintypes.HWND]
@@ -66,7 +67,7 @@ def tim_cua_so():
         if n:
             b = ctypes.create_unicode_buffer(n + 1)
             u.GetWindowTextW(h, b, n + 1)
-            if b.value == TIEU_DE and u.IsWindowVisible(h):
+            if TIEU_DE in b.value and u.IsWindowVisible(h):
                 ra.append(h)
         return True
 
@@ -106,15 +107,17 @@ def main():
         kiem("kích thước cửa sổ hợp lý", (r.right - X) > 900 and (r.bottom - Y) > 500,
              f"{r.right - X}x{r.bottom - Y}")
 
-        # Toạ độ tương đối theo bố cục ribbon: hàng nút ở y≈165, canvas từ y≈230.
+        # Toạ độ tương đối theo bố cục: thanh tiêu đề ~31px, rồi NGAY đến ribbon
+        # (không còn dải đầu trang), hàng nút ở y≈75, canvas từ y≈145.
+        # Đổi bố cục thì phải sửa mấy số này — chúng bám vào giao diện.
         for ten, viec in [
-            ("thêm khối (bấm Loop)",   lambda: pyautogui.click(X + 100, Y + 165)),
-            ("thêm khối lần 2",        lambda: pyautogui.click(X + 100, Y + 165)),
-            ("kéo khối trên canvas",   lambda: (pyautogui.moveTo(X + 300, Y + 420),
-                                                pyautogui.dragTo(X + 560, Y + 520, duration=0.5))),
-            ("mở hộp thoại (double-click)", lambda: pyautogui.doubleClick(X + 560, Y + 520)),
+            ("thêm khối (bấm Loop)",   lambda: pyautogui.click(X + 75, Y + 75)),
+            ("thêm khối lần 2",        lambda: pyautogui.click(X + 75, Y + 75)),
+            ("kéo khối trên canvas",   lambda: (pyautogui.moveTo(X + 300, Y + 380),
+                                                pyautogui.dragTo(X + 560, Y + 470, duration=0.5))),
+            ("mở hộp thoại (double-click)", lambda: pyautogui.doubleClick(X + 560, Y + 470)),
             ("đóng hộp thoại (Esc)",   lambda: pyautogui.press("escape")),
-            ("mở tab Nhật ký",         lambda: pyautogui.click(X + 165, Y + 700)),
+            ("mở tab Nhật ký",         lambda: pyautogui.click(X + 140, Y + 655)),
             ("Ctrl+Z",                 lambda: pyautogui.hotkey("ctrl", "z")),
         ]:
             viec()

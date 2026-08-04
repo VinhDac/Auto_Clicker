@@ -70,6 +70,10 @@ interface Anh { nodes: Node[]; edges: Edge[]; ten: string }
 
 const TOI_DA_UNDO = 60
 
+/** Bảng dưới: cao tối thiểu khi kéo, và cao khi đã gập (vừa đủ hàng tab). */
+const CAO_TOI_THIEU = 90
+const CAO_GAP = 33
+
 /* --------------------------------- App ----------------------------------- */
 
 function Ung() {
@@ -91,11 +95,14 @@ function Ung() {
   /** {id khối -> số thứ tự chạy}. Do Python tính, không phải JS đếm. */
   const [thuTu, setThuTu] = useState<Record<string, number>>({})
   const [coVong, setCoVong] = useState(false)
+  /** Bảng dưới: chiều cao kéo được, và gập lại còn mỗi hàng tab. */
+  const [panelCao, setPanelCao] = useState(176)
+  const [panelGap, setPanelGap] = useState(false)
   const [moCaiDat, setMoCaiDat] = useState(false)
   /** Hộp chọn template đang mở: kind + việc sẽ làm với cái được chọn. */
   const [moPicker, setMoPicker] = useState<
     { kind: 'process' | 'loop' | 'group'; tieuDe: string; xong: (t: string) => void } | null>(null)
-  const { fitView, zoomIn, zoomOut, getZoom, setCenter } = useReactFlow()
+  const { fitView, getZoom, setCenter } = useReactFlow()
 
   const lui = useRef<Anh[]>([])
   const toi = useRef<Anh[]>([])
@@ -156,6 +163,9 @@ function Ung() {
         setBoot(b.value!)
         const mau = (b.value!.settings as any)?.accent
         if (mau) doiMauNgay(String(mau))
+        const ui = (b.value!.settings as any)?.ui || {}
+        if (ui.panel_cao) setPanelCao(Math.max(CAO_TOI_THIEU, Math.min(600, Number(ui.panel_cao))))
+        if (ui.panel_gap) setPanelGap(true)
         // Nạp cả 3223 mod MỘT lần rồi lọc trong JS. Lọc ở Python theo từng phím gõ
         // thì mỗi ký tự là một vòng promise; đo được cả danh sách chỉ mất 7ms.
         py.get_mods().then(r => r.ok && setMods(r.value ?? []))
@@ -193,6 +203,50 @@ function Ung() {
     }, 250)   // gộp lại: kéo hộp bắn ra hàng chục thay đổi mỗi giây
     return () => clearTimeout(h)
   }, [nodes, edges, sanSang])
+
+  /* Tên Process nằm ở THANH TIÊU ĐỀ cửa sổ, không phải một ô nhập chiếm 263px.
+     Hoãn 400ms vì gõ từng chữ mà gọi sang Python mỗi phím thì phí cầu nối. */
+  useEffect(() => {
+    if (!sanSang) return
+    const h = setTimeout(() => { py.set_title(ten) }, 400)
+    return () => clearTimeout(h)
+  }, [ten, sanSang])
+
+  /** Đổi tên Process — double-click nền canvas, hoặc menu Template. */
+  const doiTenProcess = useCallback(() => {
+    const moi = window.prompt('Tên Process:', ten)
+    if (moi == null) return
+    const t = moi.trim()
+    if (t && t !== ten) { chup(); setTen(t); ghi(`đổi tên Process thành "${t}"`) }
+  }, [ten, chup, ghi])
+
+  /* Ghi nhớ bố cục bảng dưới. Hoãn 500ms: kéo chuột bắn ra hàng chục thay đổi,
+     ghi file mỗi lần thì phí. */
+  useEffect(() => {
+    if (!sanSang) return
+    const h = setTimeout(() => { py.save_ui({ panel_cao: panelCao, panel_gap: panelGap }) }, 500)
+    return () => clearTimeout(h)
+  }, [panelCao, panelGap, sanSang])
+
+  /** Kéo mép trên bảng dưới để chỉnh chiều cao. Bám theo con trỏ cho tới khi thả,
+   *  kể cả khi chuột đi ra ngoài cửa sổ — nếu chỉ nghe trên chính thanh kéo thì
+   *  kéo nhanh một cái là mất dấu. */
+  const batDauKeoPanel = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    if (panelGap) setPanelGap(false)
+    const y0 = e.clientY
+    const cao0 = panelGap ? CAO_GAP : panelCao
+    const di = (ev: MouseEvent) =>
+      setPanelCao(Math.max(CAO_TOI_THIEU, Math.min(600, cao0 + (y0 - ev.clientY))))
+    const thoi = () => {
+      window.removeEventListener('mousemove', di)
+      window.removeEventListener('mouseup', thoi)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'ns-resize'
+    window.addEventListener('mousemove', di)
+    window.addEventListener('mouseup', thoi)
+  }, [panelCao, panelGap])
 
   /* Nhật ký tự cuộn xuống đáy — đang chạy mà phải cuộn tay thì không theo dõi nổi. */
   useEffect(() => {
@@ -445,6 +499,7 @@ function Ung() {
   const laNhom = buocChon?.kind === 'group'
 
   const mucLuu: MucMenu[] = [
+    { nhan: '🏷 Đổi tên Process…', chay: doiTenProcess },
     { nhan: '💾 Lưu cả Process thành template', chay: luu },
     { nhan: '🔁 Lưu riêng Loop đang chọn', chay: () => luuBuoc('loop'),
       tat: !laLoop, lyDo: 'chọn một Action_Loop trước' },
@@ -467,19 +522,6 @@ function Ung() {
 
   return (
     <div className="khung">
-      <div className="dau-trang">
-        <span className="nhan">Process:</span>
-        <input className="o-ten" value={ten} onChange={e => setTen(e.target.value)} spellCheck={false} />
-        <span className="nhan">Chờ trước khi chạy:</span>
-        <input className="o-ten" style={{ minWidth: 56, width: 56 }} value={startDelay}
-               onChange={e => setStartDelay(Math.max(0, parseInt(e.target.value) || 0))} />
-        <span className="day" />
-        {dangChay && <span className="nhan dang-chay">● đang chạy — {phimDung} để dừng</span>}
-        <button className="nut" onClick={dung} disabled={!dangChay}>■ Dừng</button>
-        <button className="nut chinh" onClick={() => chay()} disabled={dangChay}>▶ Chạy</button>
-        <button className="nut" onClick={() => setMoCaiDat(true)} title="Cài đặt">⚙</button>
-      </div>
-
       <Ribbon
         themLoop={() => themKhoi('loop')}
         themNhom={() => themKhoi('group')}
@@ -488,12 +530,19 @@ function Ung() {
         doiTen={doiTen} nhanBan={nhanBan} xoa={xoa}
         hoanTac={hoanTac} lamLai={lamLai}
         mucLuu={mucLuu} mucMo={mucMo} xemDiem={xemDiem}
-        vuaManHinh={() => fitView({ padding: 0.2, duration: 300 })}
+        startDelay={startDelay} datStartDelay={setStartDelay}
+        chay={() => chay()} dung={dung} dangChay={dangChay}
+        moCaiDat={() => setMoCaiDat(true)}
         coChon={dangChon.length > 0}
         coTheHoanTac={coLui} coTheLamLai={coToi}
       />
 
-      <div className="vung-canvas">
+      {/* React Flow không có onPaneDoubleClick, nên bắt ở vỏ rồi loại trường hợp
+          double-click trúng một khối (khối đã có onNodeDoubleClick riêng). */}
+      <div className="vung-canvas"
+           onDoubleClick={e => {
+             if (!(e.target as HTMLElement).closest('.react-flow__node')) doiTenProcess()
+           }}>
         <ReactFlow
           nodes={nodesCoSo} edges={edges}
           onNodesChange={onNodesChange as (c: NodeChange[]) => void}
@@ -522,18 +571,29 @@ function Ung() {
         )}
       </div>
 
-      <div className="bang-duoi">
-        <div className="hang-tab">
-          <button className={'tab' + (tab === 'van-de' ? ' dang' : '')} onClick={() => setTab('van-de')}>
+      <div className={'bang-duoi' + (panelGap ? ' thu-gon' : '')}
+           style={{ height: panelGap ? CAO_GAP : panelCao }}>
+        <div className="thanh-keo" onMouseDown={batDauKeoPanel}
+             title="Kéo để chỉnh chiều cao" />
+        <div className="hang-tab" onDoubleClick={() => setPanelGap(v => !v)}>
+          <button className={'tab' + (tab === 'van-de' ? ' dang' : '')}
+                  onClick={() => { setTab('van-de'); setPanelGap(false) }}>
             Vấn đề{vanDe.length ? ` (${vanDe.length})` : ''}
           </button>
-          <button className={'tab' + (tab === 'nhat-ky' ? ' dang' : '')} onClick={() => setTab('nhat-ky')}>
+          <button className={'tab' + (tab === 'nhat-ky' ? ' dang' : '')}
+                  onClick={() => { setTab('nhat-ky'); setPanelGap(false) }}>
             Nhật ký
           </button>
           <span className="day" />
-          {tab === 'nhat-ky' && <button className="nut-nho" onClick={() => setNhatKy([])}>Xoá nhật ký</button>}
+          {tab === 'nhat-ky' && !panelGap &&
+            <button className="nut-nho" onClick={() => setNhatKy([])}>Xoá nhật ký</button>}
+          <button className="nut-nho nut-gap" onClick={() => setPanelGap(v => !v)}
+                  title={panelGap ? 'Mở bảng (hoặc double-click hàng tab)'
+                                  : 'Gập bảng xuống (hoặc double-click hàng tab)'}>
+            {panelGap ? '▲' : '▼'}
+          </button>
         </div>
-        <div className="noi-dung-tab">
+        {!panelGap && <div className="noi-dung-tab">
           {tab === 'van-de' ? (
             vanDe.length === 0
               ? <div className="trong">Không có vấn đề nào.</div>
@@ -568,7 +628,7 @@ function Ung() {
                   <div ref={cuoiLog} />
                 </div>
           )}
-        </div>
+        </div>}
       </div>
 
       <div className="thanh-trang-thai">
@@ -577,11 +637,12 @@ function Ung() {
         {soLoi > 0 && <span style={{ color: 'var(--err)' }}>{soLoi} lỗi</span>}
         {soCanhBao > 0 && <span style={{ color: 'var(--warn)' }}>{soCanhBao} cảnh báo</span>}
         {coVong && <span style={{ color: 'var(--warn)' }}>đường nối tạo vòng lặp</span>}
+        {dangChay && <span className="dang-chay">● đang chạy — {phimDung} để dừng</span>}
         <span className="day" />
         <span>{trangThai}</span>
-        <button className="nut-nho" onClick={() => zoomOut()}>−</button>
+        {/* Bỏ nút −/+ ở đây: cụm điều khiển của React Flow ngay trên canvas đã có
+            zoom in / zoom out / vừa khung. Giữ lại CON SỐ vì nó là thông tin. */}
         <span className="so">{Math.round(getZoom() * 100)}%</span>
-        <button className="nut-nho" onClick={() => zoomIn()}>+</button>
       </div>
 
       {moCaiDat && boot && (

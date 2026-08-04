@@ -317,6 +317,18 @@ class Api:
         return {"ok": True, "value": "pong"}
 
     @_bat_loi
+    def set_title(self, ten_process):
+        """Ghi tên Process lên THANH TIÊU ĐỀ cửa sổ — "Process mẫu — Auto Clicker".
+
+        Đây là chỗ đúng của tên tài liệu (Paint: "Untitled - Paint"). Trước đây thanh
+        tiêu đề chỉ lặp lại tên app — thứ người dùng đã biết — còn tên Process thì
+        chiếm 263px của một dải ngang riêng."""
+        if self._window:
+            t = (ten_process or "").strip()
+            self._window.set_title(f"{t} — Auto Clicker" if t else "Auto Clicker")
+        return {"ok": True}
+
+    @_bat_loi
     def bootstrap(self):
         """Mọi thứ giao diện cần ngay khi mở, gói trong MỘT lần gọi.
 
@@ -667,6 +679,23 @@ class Api:
         })
         core.save_settings(cu)
         return {"ok": True, "value": cu}
+
+    @_bat_loi
+    def save_ui(self, state):
+        """Nhớ trạng thái bố cục (chiều cao bảng dưới, gập hay không) vào settings.json.
+
+        KHÔNG dùng localStorage của trình duyệt: pywebview phục vụ trang qua
+        http://127.0.0.1:<cổng NGẪU NHIÊN mỗi lần chạy>, mà localStorage gắn theo
+        origin — nên mỗi lần mở app là mất sạch. Phải đi qua Python.
+        """
+        s = core.load_settings()
+        ui = dict(s.get("ui") or {})
+        for k, v in (state or {}).items():
+            if k in ("panel_cao", "panel_gap"):     # chỉ nhận khoá đã biết
+                ui[k] = v
+        s["ui"] = ui
+        core.save_settings(s)
+        return {"ok": True, "value": ui}
 
     @_bat_loi
     def update_mods(self, game=None):

@@ -44,6 +44,7 @@ async function goi<T>(ten: string, ...args: unknown[]): Promise<Reply<T>> {
 
 export const py = {
   bootstrap: () => goi<Bootstrap>('bootstrap'),
+  set_title: (ten: string) => goi<null>('set_title', ten),
   demo_process: () => goi<ProcessDoc>('demo_process'),
   new_process: () => goi<ProcessDoc>('new_process'),
   load_process: (ten: string) => goi<ProcessDoc>('load_process', ten),
@@ -52,6 +53,7 @@ export const py = {
   list_templates: (kind = 'process') => goi<string[]>('list_templates', kind),
   // --- cài đặt ---
   save_settings: (s: Record<string, unknown>) => goi<Record<string, unknown>>('save_settings', s),
+  save_ui: (state: Record<string, unknown>) => goi<Record<string, unknown>>('save_ui', state),
   update_mods: (game?: string) => goi<{ game: string; so_luong: number }>('update_mods', game ?? null),
 
   // --- template Loop / Nhóm ---
