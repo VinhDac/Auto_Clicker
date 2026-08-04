@@ -22,6 +22,7 @@ import time
 import random
 import threading
 import ctypes
+import uuid
 import functools
 import contextlib
 import urllib.request
@@ -451,8 +452,31 @@ def migrate_legacy_conditions_into_actions(actions, hover_point, conditions):
 DEFAULT_MAX_LOOPS = 1000
 
 
+def new_step_id():
+    """ID bền cho 1 bước. Giao diện đồ thị cần định danh KHÔNG đổi khi bước bị kéo
+    sang chỗ khác hay đổi tên — dùng số thứ tự thì kéo-thả một cái là mọi đường nối
+    trỏ sai, dùng tên thì đổi tên một cái là gãy."""
+    return "s" + uuid.uuid4().hex[:8]
+
+
+def ensure_step_ids(steps):
+    """Cấp ID cho những bước chưa có (file cũ), và dọn ID trùng nếu có.
+
+    Sửa TẠI CHỖ rồi trả về chính danh sách đó, để bên gọi dùng kiểu nào cũng được."""
+    da_dung = set()
+    for st in steps or []:
+        if not isinstance(st, dict):
+            continue
+        sid = st.get("id")
+        if not sid or sid in da_dung:
+            sid = new_step_id()
+            st["id"] = sid
+        da_dung.add(sid)
+    return steps
+
+
 def make_loop_step(name="Loop mới"):
-    return {"kind": "loop", "name": name, "actions": [],
+    return {"kind": "loop", "id": new_step_id(), "name": name, "actions": [],
             "loop_start_index": 0, "max_loops": DEFAULT_MAX_LOOPS,
             "hold_keys": ""}
 
@@ -462,12 +486,16 @@ def make_group_step(name="Nhóm mới"):
 
     Cố tình không có max_loops / loop_start_index / hold_keys — nhóm không lặp
     nên mấy thứ đó vô nghĩa, có mặt chỉ tổ gây hiểu nhầm."""
-    return {"kind": "group", "name": name, "actions": []}
+    return {"kind": "group", "id": new_step_id(), "name": name, "actions": []}
 
 
 def make_action_step(action):
     st = dict(action)
     st["kind"] = "action"
+    # GIỮ id cũ nếu có: giao diện cũ thay cả bước mỗi lần sửa xong hành động lẻ
+    # (`steps[cur] = make_action_step(...)`). Cấp id mới ở đây thì mỗi lần bấm "Sửa"
+    # là bước đó thành một nút khác trên đồ thị và mất hết đường nối.
+    st["id"] = action.get("id") or new_step_id()
     return st
 
 
@@ -510,6 +538,82 @@ def step_display(step):
     return f"⚡ {action_display(step)}   (chạy 1 lần)"
 
 
+def _giu_id_pos(nguon, dich):
+    """Chuyển `id` và `pos` từ dict gốc sang dict đã chuẩn hoá.
+
+    `normalize_process` dựng lại từng bước bằng danh sách khoá cố định (cố ý — để file
+    rác không lọt vào). Nhưng thế thì hai khoá này bị rơi mất: `id` là định danh nút
+    trên đồ thị, `pos` là chỗ người dùng đã kéo nút tới. Mất `pos` là mỗi lần mở file
+    sơ đồ lại nhảy về vị trí khác."""
+    if nguon.get("id"):
+        dich["id"] = nguon["id"]
+    pos = nguon.get("pos")
+    if isinstance(pos, (list, tuple)) and len(pos) == 2:
+        try:
+            dich["pos"] = [float(pos[0]), float(pos[1])]
+        except (TypeError, ValueError):
+            pass
+    return dich
+
+
+def default_edges(steps):
+    """Chuỗi thẳng bước 1 → 2 → 3… — đúng cách Process vẫn chạy từ trước tới nay.
+
+    Nhờ hàm này mà "không có đường nối" và "nối thành chuỗi thẳng" là MỘT. File cũ
+    (không có khoá `edges`) mở ra vẫn ra đúng sơ đồ nó vẫn chạy, không phải di cư gì."""
+    ds = [s for s in (steps or []) if isinstance(s, dict) and s.get("id")]
+    return [{"from": a["id"], "to": b["id"], "port": "out"}
+            for a, b in zip(ds, ds[1:])]
+
+
+def clean_edges(edges, steps):
+    """Bỏ đường nối trỏ tới bước không còn tồn tại, và bỏ trùng.
+
+    Không tự ý sửa ý người dùng thành thứ khác — chỉ vứt cái đã vô nghĩa. Nối tới một
+    bước đã xoá thì giữ lại cũng chẳng để làm gì ngoài việc gây lỗi khó hiểu."""
+    co = {s.get("id") for s in (steps or []) if isinstance(s, dict)}
+    ra, thay = [], set()
+    for e in edges or []:
+        if not isinstance(e, dict):
+            continue
+        a, b = e.get("from"), e.get("to")
+        if a not in co or b not in co:
+            continue
+        khoa = (a, b, e.get("port") or "out")
+        if khoa in thay:
+            continue
+        thay.add(khoa)
+        moi = {"from": a, "to": b, "port": e.get("port") or "out"}
+        # Cạnh nào của hộp thì đường nối cắm vào — thuần thị giác, nhưng phải lưu,
+        # nếu không mở lại file là sơ đồ tự vẽ khác đi so với lúc người dùng sắp.
+        for k in ("from_side", "to_side"):
+            if e.get(k):
+                moi[k] = str(e[k])
+        ra.append(moi)
+    return ra
+
+
+def make_process_template(name, game, start_delay, steps, edges=None):
+    """Đóng gói cả Process thành template loại "process".
+
+    Ở đây chứ không ở tầng giao diện: `make_loop_template`/`make_group_template` vốn đã
+    nằm trong core, riêng bản Process trước đây kẹt lại trong `auto_clicker_gui.py`
+    (`template_data`) với `schema`/`type` viết cứng. Hai giao diện (tkinter và web) mà
+    mỗi bên tự ráp định dạng thì sớm muộn cũng lệch nhau."""
+    st = ensure_step_ids(steps or [])
+    return {
+        "schema": 3,
+        "type": "process",
+        "name": (name or "").strip() or "Process 1",
+        "game": game,
+        "start_delay": max(0, int(start_delay or 0)),
+        "steps": st,
+        # Giao diện tkinter cũ không truyền edges -> ghi ra chuỗi thẳng, đúng thứ tự
+        # nó vẫn chạy. Không có nhánh nào bị bịa ra sau lưng người dùng.
+        "edges": clean_edges(edges, st) if edges is not None else default_edges(st),
+    }
+
+
 def normalize_process(data):
     """Đọc file template ở BẤT KỲ định dạng nào -> {name, start_delay, steps, note}.
 
@@ -528,26 +632,29 @@ def normalize_process(data):
             if not isinstance(st, dict):
                 continue
             if st.get("kind") == "loop":
-                steps.append({
+                steps.append(_giu_id_pos(st, {
                     "kind": "loop",
                     "name": st.get("name") or "Loop",
                     "actions": st.get("actions") or [],
                     "loop_start_index": int(st.get("loop_start_index") or 0),
                     "max_loops": int(st.get("max_loops") or DEFAULT_MAX_LOOPS),
                     "hold_keys": st.get("hold_keys") or "",
-                })
+                }))
             elif st.get("kind") == "group":
-                steps.append({
+                steps.append(_giu_id_pos(st, {
                     "kind": "group",
                     "name": st.get("name") or "Nhóm",
                     "actions": st.get("actions") or [],
-                })
+                }))
             elif st.get("type"):
-                steps.append(make_action_step(st))
+                steps.append(_giu_id_pos(st, make_action_step(st)))
+        steps = ensure_step_ids(steps)
+        e = data.get("edges")
         return {
             "name": data.get("name") or "Process 1",
             "start_delay": data.get("start_delay", 3),
             "steps": steps,
+            "edges": clean_edges(e, steps) if isinstance(e, list) else default_edges(steps),
             "note": note,
         }
 
@@ -573,10 +680,12 @@ def normalize_process(data):
             })
         if len(steps) > 1:
             note = f"Đã nạp {len(steps)} Action_Loop từ file thành {len(steps)} bước."
+        steps = ensure_step_ids(steps)
         return {
             "name": data.get("name") if data.get("name") not in (None, "template") else "Process 1",
             "start_delay": data.get("start_delay", 3),
             "steps": steps,
+            "edges": default_edges(steps),
             "note": note,
         }
 
@@ -593,8 +702,9 @@ def normalize_process(data):
         "max_loops": norm["max_loops"],
         "hold_keys": "",          # định dạng cũ chưa có khái niệm này
     }]
+    steps = ensure_step_ids(steps)
     return {"name": "Process 1", "start_delay": norm["start_delay"],
-            "steps": steps, "note": norm["note"]}
+            "steps": steps, "edges": default_edges(steps), "note": norm["note"]}
 
 
 # ---------------- Kiểm tra cấu hình trước khi chạy (panel "Vấn đề") ----------------

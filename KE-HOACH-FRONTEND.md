@@ -191,9 +191,25 @@ App tkinter cũ **chạy được suốt P0–P3**. Đây là điều lần trư
     **3223 mod (~130KB) qua cầu nối 7ms** → xác nhận quyết định gửi cả danh sách một
     lần rồi lọc trong JS, thay vì lọc ở Python theo từng phím gõ như bản tkinter
     (bản cũ phải đặt trần hiển thị 150 dòng, bản web bỏ được trần đó)
-- **P1 — Vỏ giao diện thật.** Ribbon trên + canvas React Flow + 2 tab dưới + thanh trạng
-  thái, theme tối. Hộp Loop hiện đúng nội dung. Kéo, nối, Ctrl+Z. **Dữ liệu thật từ
-  template thật.** Chuyển `make_process_template` vào core. **← Xem và chê ở đây**
+- **P1 — Vỏ giao diện thật** ✅ **XONG — xem và chê ở đây**
+  - ✅ core: `new_step_id`/`ensure_step_ids` (id bền), `pos` (toạ độ hộp),
+    `default_edges`/`clean_edges` (đường nối), `make_process_template` **đã chuyển từ
+    GUI về core** — giao diện tkinter cũ giờ gọi chung hàm đó
+  - ✅ **File cũ không cần di cư**: thiếu khoá `edges` = chuỗi thẳng 1→2→3, đúng thứ
+    tự nó vẫn chạy. Thiếu `id` thì được cấp lúc mở
+  - ✅ `api.py`: `new_step` / `describe` / `save_process` / `load_process` /
+    `demo_process` / `validate`. **Nội dung hộp do Python sinh** bằng chính
+    `core.action_display` mà bản tkinter dùng → hai giao diện không thể mô tả khác nhau
+  - ✅ React + TS + Vite + React Flow: ribbon 5 nhóm kiểu Paint, canvas, hộp co theo
+    nội dung, 4 cổng mỗi cạnh, Ctrl+Z/Y/D/S, F2, Delete, tab Vấn đề + Nhật ký,
+    thanh trạng thái, thanh tiêu đề tối (DwmSetWindowAttribute + EnumWindows)
+  - ✅ Bộ test mới `test_do_thi_va_api.py` (44) — chạy bằng Python thuần, không mở cửa
+    sổ. **Tổng: 530 check / 14 bài, tất cả xanh.** Test cũ không vỡ cái nào
+  - **Số đo:** build 1,1s · gói ra 342KB JS (110KB gzip) + 23KB CSS
+  - **Lỗi test bắt được (đáng ghi lại):** `core.list_templates()` trả tuple
+    `(tên, đường_dẫn)` chứ không phải tên — trả thẳng sang JS là vừa sai kiểu vừa lộ
+    đường dẫn đĩa; và `new_step("action")` tạo hành động thiếu `point` làm
+    `action_summary` nổ `KeyError`. Cả hai lọt qua mắt, chỉ test mới thấy
 - **P2 — 7 hộp thoại**, dựng lại y hệt bố cục 10 ảnh trong
   `Ảnh những phần ở giao diện app cũ mà tôi thích/`
 - **P3 — Nối 3 overlay + nút Chạy/Dừng + nhật ký + đóng gói.** Tới đây app dùng được thật

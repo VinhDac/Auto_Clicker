@@ -29,6 +29,7 @@ AN_TOAN = [
     ("test_phim_tat.py", "Phím tắt 2 bảng: Ctrl+C/V, Delete, kéo-thả"),
     ("test_nhom_hd.py", "Nhóm HĐ 1 lần: khung dùng chung, chạy 1 lượt, template"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
+    ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
 ]
 
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.

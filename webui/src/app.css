@@ -1,0 +1,291 @@
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 var(--font);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Bấm vào canvas mà quét xanh cả chữ trên hộp thì trông rất nghiệp dư.
+   Chỗ nào cần bôi đen (ô nhập) thì bật lại riêng. */
+::selection { background: var(--accent-soft); }
+.khung { user-select: none; }
+input, textarea { user-select: text; }
+
+.khung {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ---------------- Thanh trên cùng ---------------- */
+.dau-trang {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.dau-trang .nhan { color: var(--muted); font-size: 12px; }
+.dau-trang .day { flex: 1; }
+
+.o-ten {
+  background: var(--field);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  font: 13px var(--font);
+  min-width: 220px;
+  outline: none;
+  transition: border-color .12s;
+}
+.o-ten:focus { border-color: var(--accent); }
+
+/* ---------------- Ribbon kiểu Paint ---------------- */
+.ribbon {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 4px 0;
+  flex: 0 0 auto;
+  overflow-x: auto;
+}
+.nhom-ribbon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 10px 3px;
+  border-right: 1px solid var(--border-soft);
+  min-width: 0;
+}
+.nhom-ribbon:last-child { border-right: none; }
+.nhom-ribbon .cac-nut { display: flex; gap: 4px; align-items: flex-start; flex: 1; }
+/* Nhãn nhóm nằm DƯỚI như ribbon của Paint — đây là thứ làm nó đọc ra "ribbon"
+   chứ không phải "một hàng nút". */
+.nhom-ribbon .ten-nhom {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-top: 3px;
+  white-space: nowrap;
+  letter-spacing: .02em;
+}
+
+.nut-lon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 58px;
+  padding: 6px 8px 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 11.5px var(--font);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.nut-lon:hover:not(:disabled) { background: var(--raised); border-color: var(--border); }
+.nut-lon:active:not(:disabled) { background: var(--raised-hover); }
+.nut-lon:disabled { opacity: .38; cursor: default; }
+.nut-lon .hinh { width: 22px; height: 22px; display: block; }
+
+.nut {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font: 12.5px var(--font);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.nut:hover:not(:disabled) { background: var(--raised-hover); }
+.nut:disabled { opacity: .4; cursor: default; }
+.nut.chinh { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 600; }
+.nut.chinh:hover:not(:disabled) { filter: brightness(1.08); }
+
+/* ---------------- Canvas ---------------- */
+.vung-canvas { flex: 1 1 auto; position: relative; min-height: 0; background: var(--canvas-bg); }
+
+.trong-rong {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  color: var(--dim);
+}
+.trong-rong .to { font-size: 15px; color: var(--muted); }
+
+/* ---------------- Hộp (node) ---------------- */
+.hop {
+  width: 296px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: border-color .12s, box-shadow .12s;
+}
+.hop:hover { border-color: #4d4d4d; }
+/* Chọn = viền accent + quầng mờ. KHÔNG tô nền cả hộp bằng màu accent — màu no
+   trải rộng trên nền tối bị rung mắt (đã gặp ở bản tkinter). */
+.hop.dang-chon {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-lg);
+}
+
+.hop .dau {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+}
+.hop .dau .dai-mau { width: 3px; height: 15px; border-radius: 2px; flex: 0 0 auto; }
+.hop .dau .ten {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.hop .dau .loai { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+
+.hop .than { padding: 5px 0; }
+.hop .dong {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 2px 10px;
+  font: 11.5px/1.55 var(--mono);
+  color: var(--text);
+}
+.hop .dong .danh {
+  flex: 0 0 20px;
+  font-size: 9.5px;
+  color: var(--dim);
+  text-align: right;
+}
+/* Cắt chữ phải đặt trên chính phần tử chứa CHỮ. Đặt trên .dong (flex container)
+   thì con flex mặc định min-width:auto nên nó cứ nở ra và tràn khỏi hộp. */
+.hop .dong > span:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Hành động chạy 1 lần lúc đầu: làm mờ, vì nhìn hộp phải biết ngay Loop thật sự
+   LẶP LẠI những gì. Đây chính là cái bản Listbox cũ phải diễn tả bằng chữ "(1 lần)". */
+.hop .dong.mo-dau { color: var(--dim); }
+.hop .dong.muc-tieu { color: var(--accent); }
+.hop .dong.con-nua { color: var(--dim); font-style: italic; font-family: var(--font); font-size: 11px; }
+.hop .dong.rong { color: var(--dim); font-style: italic; font-family: var(--font); }
+
+.hop .chan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border-soft);
+  background: rgba(0, 0, 0, .12);
+}
+.the {
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--field);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.the.muc-tieu { color: var(--accent); border-color: rgba(255, 166, 87, .35); }
+
+/* Cổng nối: nhỏ khi nghỉ, to hẳn khi rê vào hộp — để không rối mắt mà vẫn dễ trúng */
+.react-flow__handle {
+  width: 9px; height: 9px;
+  background: var(--raised);
+  border: 1.5px solid var(--muted);
+  transition: transform .12s, background .12s, border-color .12s;
+}
+.hop:hover ~ .react-flow__handle,
+.react-flow__node:hover .react-flow__handle { transform: scale(1.25); border-color: var(--accent); }
+.react-flow__handle:hover { background: var(--accent); border-color: var(--accent); }
+
+.react-flow__edge-path { stroke: #5a5a5a; stroke-width: 1.8; }
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path { stroke: var(--accent); stroke-width: 2.2; }
+.react-flow__connection-path { stroke: var(--accent); stroke-width: 2; }
+.react-flow__attribution { display: none; }
+
+/* ---------------- Bảng dưới ---------------- */
+.bang-duoi {
+  flex: 0 0 auto;
+  height: 176px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.bang-duoi.thu-gon { height: 33px; }
+.hang-tab { display: flex; align-items: center; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--border-soft); }
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 7px 12px 6px;
+  font: 12px var(--font);
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.dang { color: var(--text); border-bottom-color: var(--accent); }
+.hang-tab .day { flex: 1; }
+.nut-nho {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 4px 8px; border-radius: 4px; font: 12px var(--font);
+}
+.nut-nho:hover { background: var(--raised); color: var(--text); }
+
+.noi-dung-tab { flex: 1; overflow: auto; padding: 6px 0; }
+.dong-van-de {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 3px 12px; cursor: pointer; font-size: 12.5px;
+}
+.dong-van-de:hover { background: var(--raised); }
+.dong-van-de .muc { flex: 0 0 auto; font-size: 11px; }
+.dong-van-de.loi .muc { color: var(--err); }
+.dong-van-de.canh-bao .muc { color: var(--warn); }
+.trong { color: var(--dim); padding: 10px 12px; font-style: italic; }
+.nhat-ky { font: 11.5px/1.6 var(--mono); padding: 4px 12px; white-space: pre-wrap; color: var(--muted); }
+
+/* ---------------- Thanh trạng thái ---------------- */
+.thanh-trang-thai {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.thanh-trang-thai .day { flex: 1; }
+.thanh-trang-thai .so { color: var(--text); }

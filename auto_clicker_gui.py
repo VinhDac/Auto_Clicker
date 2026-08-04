@@ -2783,15 +2783,15 @@ class AutoClickerApp:
         }
 
     def template_data(self):
-        """Dữ liệu LƯU FILE — định dạng Process (nhiều bước nối tiếp)."""
-        return {
-            "schema": 3,
-            "type": "process",
-            "name": self.process_name_var.get().strip() or "Process 1",
-            "game": self.settings["game"],
-            "start_delay": max(0, int(self.start_var.get() or 0)),
-            "steps": self.steps,
-        }
+        """Dữ liệu LƯU FILE — định dạng Process (nhiều bước nối tiếp).
+
+        Định dạng do core quyết định, không phải ở đây: giao diện web dùng chung
+        `make_process_template`, nên hai bên không thể lệch nhau."""
+        return core.make_process_template(
+            self.process_name_var.get(),
+            self.settings["game"],
+            self.start_var.get() or 0,
+            self.steps)
 
     # ---- menu Lưu ▾ / Mở ▾ ----
     def _popup_under(self, widget, menu):

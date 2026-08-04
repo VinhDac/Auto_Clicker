@@ -35,23 +35,64 @@ def duong_dan_giao_dien():
     return os.path.join(HERE, "webui", "p0_probe.html")
 
 
+def thanh_tieu_de_toi(tieu_de):
+    """Bôi đen thanh tiêu đề Windows cho khớp giao diện tối.
+
+    Cùng mẹo DwmSetWindowAttribute mà bản tkinter đang dùng. Phải tìm cửa sổ theo
+    EnumWindows chứ không FindWindowW: tiêu đề có dấu gạch dài "—" và tiếng Việt,
+    FindWindowW hay trả 0 (đã dính ở bản tkinter)."""
+    import ctypes
+    from ctypes import wintypes
+    try:
+        u, dwm = ctypes.windll.user32, ctypes.windll.dwmapi
+        tim = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def duyet(hwnd, _):
+            n = u.GetWindowTextLengthW(hwnd)
+            if n:
+                buf = ctypes.create_unicode_buffer(n + 1)
+                u.GetWindowTextW(hwnd, buf, n + 1)
+                if buf.value == tieu_de and u.IsWindowVisible(hwnd):
+                    tim.append(hwnd)
+            return True
+
+        u.EnumWindows(duyet, 0)
+        for hwnd in tim:
+            dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(1)),
+                                      ctypes.sizeof(ctypes.c_int))
+            # Đặt thuộc tính thôi thì khung chưa vẽ lại — phải ép một lần.
+            u.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0020)
+    except Exception:
+        pass          # thanh tiêu đề sáng thì xấu, nhưng không đáng để app chết
+
+
 def main():
     trang = duong_dan_giao_dien()
     if not os.path.exists(trang):
         print(f"Không tìm thấy giao diện: {trang}", file=sys.stderr)
         return 1
 
+    TIEU_DE = "Auto Clicker — PoE2"
     webview.create_window(
-        "Auto Clicker — PoE2",
+        TIEU_DE,
         url=trang,
         js_api=Api(),
         width=1280, height=820,
         min_size=(980, 640),
         background_color="#202020",       # tránh chớp trắng trước khi CSS kịp chạy
     )
+
+    def sau_khi_mo():
+        import time
+        time.sleep(0.35)                  # đợi cửa sổ được map xong mới bôi đen được
+        thanh_tieu_de_toi(TIEU_DE)
+
     # debug=True bật DevTools Chromium đầy đủ. Đây là thứ bản tkinter không bao giờ có —
     # trước đây phải LẤY MẪU PIXEL trên ảnh chụp màn hình mới biết màu có đúng không.
-    webview.start(debug=True)
+    # http_server=True: trang build ra dùng ES module, nạp qua file:// thì Chromium chặn
+    # vì CORS (origin "null") -> trang trắng. Phục vụ qua http://127.0.0.1 là hết.
+    webview.start(sau_khi_mo, debug=True, http_server=True)
     return 0
 
 
