@@ -16,6 +16,7 @@ Ba cái bẫy bài này canh, vì cả ba đều làm menu "trông vẫn đúng"
 Bắn sự kiện thẳng vào DOM, không đụng chuột thật -> nhóm AN_TOAN.
 """
 import _boot  # noqa: F401
+import _web
 
 import os
 import sys
@@ -117,10 +118,17 @@ def main():
 
     def than():
         try:
-            for _ in range(90):
-                time.sleep(0.15)
-                if js("!!document.querySelector('.hop')"):
-                    break
+            _web.cho_san_sang(js)
+            # Mở app ra là KHUNG TRẮNG. Process mẫu chỉ để xem thử nên không tự hiện
+            # nữa — thấy sẵn 3 khối lạ thì lần nào cũng phải xoá đi mới bắt đầu được.
+            # Nhưng vẫn phải với tới được, nên nó nằm trong menu "Mở ▾".
+            ghi.append(("khởi động ra khung trắng, không có khối nào",
+                        js("document.querySelectorAll('.react-flow__node').length") == 0))
+            ghi.append(("  …và có lời nhắc \"Canvas trống\" chứ không phải màn hình câm",
+                        js("!!document.querySelector('.trong-rong')")))
+            n_mau = _web.mo_mau(js)
+            ghi.append(("menu \"Mở ▾\" vẫn mở lại được Process mẫu", n_mau == 3,
+                        f"— {n_mau} khối"))
             time.sleep(1.4)
             js(JS_TIEN_ICH)
             khung = json.loads(js("JSON.stringify(window.__M.khung())"))
@@ -132,9 +140,10 @@ def main():
             time.sleep(0.5)
             ghi.append(("bấm phải nền → hiện menu", js("window.__M.co()")))
             ten = js("window.__M.ten()")
-            ghi.append(("menu nền có đủ 4 mục Thêm khối",
+            ghi.append(("menu nền có đủ mục Thêm khối, khớp với ribbon",
                         [t for t in ten if t.startswith("Thêm")]
-                        == ["Thêm Loop", "Thêm Nhóm", "Thêm HĐ lẻ", "Thêm Rẽ nhánh"],
+                        == ["Thêm Loop", "Thêm Nhóm", "Thêm HĐ lẻ", "Thêm Rẽ nhánh",
+                            "Thêm Delay"],
                         f"— {ten}"))
             ghi.append(("menu nền KHÔNG có Chép (chỗ trống thì chép cái gì)",
                         not any(t.startswith("Chép") for t in ten)))

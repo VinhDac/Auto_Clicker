@@ -27,6 +27,7 @@ AN_TOAN = [
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
     ("test_re_nhanh.py", "Rẽ nhánh theo mod: confirm_mod, đánh số phân cấp, bộ chạy"),
     ("test_re_nhanh_web.py", "Rẽ nhánh phía giao diện: nút ribbon, nhãn lên huy hiệu (~7s)"),
+    ("test_menu_ribbon_web.py", "Menu xổ Lưu/Mở: không bị ribbon cắt cụt (~8s)"),
     ("test_ghi_phim_web.py", "Ghi phím bằng cách bấm phím thật (~9s)"),
     ("test_menu_phai_web.py", "Menu chuột phải: nền / khối / dây (~9s)"),
     ("test_chep_dan_web.py", "Chép/dán khối: bản dán rơi đúng chỗ con trỏ (~6s)"),

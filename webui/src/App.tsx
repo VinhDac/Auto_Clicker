@@ -204,11 +204,14 @@ function Ung() {
         py.get_mods().then(r => r.ok && setMods(r.value ?? []))
         const ds = await py.list_templates('process')
         const co = (ds.ok && (ds.value?.length ?? 0) > 0)
-        const r = co ? await py.load_process(ds.value![0]) : await py.demo_process()
+        // Chưa có template nào thì mở KHUNG TRẮNG, không phải Process mẫu. Mẫu chỉ
+        // để xem thử, mà mở app ra đã thấy sẵn 3 khối lạ thì lần nào cũng phải xoá đi
+        // mới bắt đầu làm được. Vẫn mở lại được bất cứ lúc nào từ menu "Mở ▾".
+        const r = co ? await py.load_process(ds.value![0]) : await py.new_process()
         if (r.ok && r.value) {
           const { nodes: n, edges: e } = doc_sang_rf(r.value)
           setNodes(n); setEdges(e); setTen(r.value.name); setStartDelay(r.value.start_delay)
-          ghi(co ? `mở template "${ds.value![0]}"` : 'chưa có template — đang xem Process mẫu')
+          ghi(co ? `mở template "${ds.value![0]}"` : 'canvas trống — bắt đầu thôi')
         }
         setSanSang(true)
         setTrangThai('sẵn sàng')
@@ -318,7 +321,8 @@ function Ung() {
   }, [screenToFlowPosition])
 
   const themKhoi = useCallback(async (kind: StepKind, loaiHD?: string,
-                                      taiDay?: { x: number; y: number }) => {
+                                      taiDay?: { x: number; y: number },
+                                      moSua = true) => {
     const r = await py.new_step(kind, loaiHD)
     if (!r.ok || !r.value) { ghi('không tạo được khối: ' + r.error); return }
     chup()
@@ -337,8 +341,17 @@ function Ung() {
     // định là một Trái-click giữa màn hình — cả ba đều vô nghĩa cho tới khi cấu hình.
     // Bắt người dùng đi tìm rồi double-click là một bước thừa không đổi lại được gì.
     // Chỉ muốn cái khối thôi thì Esc là xong.
-    setDangSua(step.id)
+    //
+    // NGOẠI LỆ là Delay: nó dùng được NGAY với giá trị mặc định, không có toạ độ nào
+    // phải chọn, không có điều kiện nào phải nhập. Mở hộp thoại rồi bắt bấm Lưu chỉ
+    // để xác nhận đúng cái mặc định là hai cú bấm thừa cho thứ hay thêm nhất.
+    if (moSua) setDangSua(step.id)
   }, [nodes, chup, setNodes, ghi])
+
+  /** Thêm khối Delay ngay lập tức, không mở hộp thoại. Muốn đổi thời gian thì
+   *  double-click vào khối như mọi khối khác. */
+  const themDelay = useCallback((taiDay?: { x: number; y: number }) =>
+    themKhoi('action', 'delay', taiDay, false), [themKhoi])
 
   const xoa = useCallback(() => {
     if (!dangChon.length) return
@@ -518,6 +531,18 @@ function Ung() {
       }))])
     ghi(`đã dán ${moi.length} khối`)
   }, [chup, setNodes, setEdges, ghi, diemDan])
+
+  /** Mở Process mẫu — 3 khối có sẵn để xem thử giao diện làm được những gì.
+   *  Không còn tự hiện lúc khởi động, nhưng vẫn phải với tới được. */
+  const moMau = useCallback(async () => {
+    const r = await py.demo_process()
+    if (!r.ok || !r.value) { ghi('không mở được Process mẫu: ' + r.error, 'err'); return }
+    chup()
+    const { nodes: n, edges: e } = doc_sang_rf(r.value)
+    setNodes(n); setEdges(e); setTen(r.value.name); setStartDelay(r.value.start_delay)
+    ghi('mở Process mẫu (chỉ để xem thử)')
+    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 60)
+  }, [chup, setNodes, setEdges, ghi, fitView])
 
   const luu = useCallback(async () => {
     const t = window.prompt('Lưu Process với tên:', ten)
@@ -708,6 +733,9 @@ function Ung() {
         { ten: 'Thêm HĐ lẻ', icon: 'action', onClick: () => themKhoi('action', undefined, taiDay) },
         { ten: 'Thêm Rẽ nhánh', icon: 'branch',
           onClick: () => themKhoi('action', 'confirm_mod', taiDay) },
+        // Giữ đồng bộ với ribbon: menu mà thiếu một nút có trên ribbon thì người
+        // dùng sẽ tưởng chuột phải làm được ít hơn.
+        { ten: 'Thêm Delay', icon: 'delay', onClick: () => themDelay(taiDay) },
       ]
     }
 
@@ -750,7 +778,7 @@ function Ung() {
       { ngan: true },
       { ten: nhieu ? `Xoá (${ids.length} khối)` : 'Xoá', icon: 'trash', onClick: xoa },
     ]
-  }, [menuPhai, nodes, edges, dangChon, thuTu, danKhoi, xoaDay, themKhoi,
+  }, [menuPhai, nodes, edges, dangChon, thuTu, danKhoi, xoaDay, themKhoi, themDelay,
       chepKhoi, nhanBan, noi, ngatKetNoi, xoa])
 
   /* ------------------------------ phím tắt ------------------------------- */
@@ -808,6 +836,7 @@ function Ung() {
     { nhan: 'Chèn Nhóm có sẵn vào Process này',
       chay: () => setMoPicker({ kind: 'group', tieuDe: 'Chèn Nhóm HĐ 1 lần', xong: t => { setMoPicker(null); chenBuoc('group', t) } }) },
     { nhan: 'Mở từ file khác…', chay: moFile },
+    { nhan: 'Process mẫu (xem thử)', chay: moMau },
   ]
 
   const soLoi = vanDe.filter(v => v.severity === 'error').length
@@ -820,6 +849,7 @@ function Ung() {
         themNhom={() => themKhoi('group')}
         themHanhDong={() => themKhoi('action')}
         themReNhanh={() => themKhoi('action', 'confirm_mod')}
+        themDelay={() => themDelay()}
         sua={() => dangChon[0] && setDangSua(dangChon[0].id)} datBatDau={datBatDau}
         nhanBan={nhanBan} xoa={xoa}
         hoanTac={hoanTac} lamLai={lamLai}

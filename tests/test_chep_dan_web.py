@@ -16,6 +16,7 @@ Ba thứ bài này giữ:
 Bắn sự kiện thẳng vào DOM, không đụng chuột thật -> nhóm AN_TOAN.
 """
 import _boot  # noqa: F401
+import _web
 
 import os
 import sys
@@ -97,10 +98,8 @@ def main():
 
     def than():
         try:
-            for _ in range(90):
-                time.sleep(0.15)
-                if js("!!document.querySelector('.hop')"):
-                    break
+            _web.cho_san_sang(js)
+            _web.mo_mau(js)
             time.sleep(1.4)
             js(JS_TIEN_ICH)
             khung = json.loads(js("JSON.stringify(window.__C.khungCanvas())"))

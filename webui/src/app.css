@@ -550,8 +550,10 @@ select.o { cursor: pointer; }
 
 /* ---------------- Menu xổ trên ribbon ---------------- */
 .boc-menu { position: relative; }
+/* `fixed` chứ KHÔNG phải `absolute`: `.ribbon` có overflow-x nên nó cắt cụt mọi thứ
+   tràn ra ngoài, kể cả theo chiều dọc. Toạ độ do JS tính từ vị trí nút. */
 .menu-xo {
-  position: absolute; top: 100%; left: 0; z-index: 30;
+  position: fixed; z-index: 40;
   min-width: 268px;
   background: var(--surface);
   border: 1px solid var(--border);

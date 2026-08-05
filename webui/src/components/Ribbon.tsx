@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 /** Thanh công cụ kiểu ribbon của Paint: nút nhóm lại, nhãn nhóm nằm DƯỚI, có vạch
  *  ngăn giữa các nhóm. Mọi thứ "thêm vào" nằm ở trên; canvas phía dưới chỉ để di
@@ -31,23 +31,48 @@ export interface MucMenu { nhan: string; chay: () => void; tat?: boolean; lyDo?:
  *  tưởng tính năng không tồn tại. */
 function NutMenu({ ten, icon, muc }: { ten: string; icon: ReactNode; muc: MucMenu[] }) {
   const [mo, setMo] = useState(false)
+  const [viTri, setViTri] = useState({ x: 0, y: 0 })
   const boc = useRef<HTMLDivElement>(null)
+  const nut = useRef<HTMLButtonElement>(null)
+  const bang = useRef<HTMLDivElement>(null)
+
+  /* Menu này ĐỊNH VỊ THEO KHUNG NHÌN, không theo khối cha.
+     `.ribbon` có `overflow-x: auto`, mà theo chuẩn CSS hễ một trục thôi `visible` thì
+     trục kia cũng thôi luôn — nên dải ribbon cắt cụt menu theo CHIỀU DỌC, đúng lỗi
+     người dùng thấy: bấm "Mở ▾" ra một mẩu menu bị xén, không bấm được mục nào.
+     `position: fixed` thoát khỏi mọi vùng cắt của khối cha. */
+  useLayoutEffect(() => {
+    if (!mo || !nut.current) return
+    const r = nut.current.getBoundingClientRect()
+    const m = bang.current?.getBoundingClientRect()
+    const le = 6
+    setViTri({
+      x: Math.max(le, Math.min(r.left, window.innerWidth - (m?.width ?? 268) - le)),
+      y: Math.max(le, Math.min(r.bottom + 2, window.innerHeight - (m?.height ?? 0) - le)),
+    })
+  }, [mo])
+
   useEffect(() => {
     if (!mo) return
     const f = (e: MouseEvent) => {
       if (!boc.current?.contains(e.target as globalThis.Node)) setMo(false)
     }
+    const dong = () => setMo(false)
     window.addEventListener('mousedown', f)
-    return () => window.removeEventListener('mousedown', f)
+    window.addEventListener('resize', dong)
+    return () => {
+      window.removeEventListener('mousedown', f)
+      window.removeEventListener('resize', dong)
+    }
   }, [mo])
   return (
     <div className="boc-menu" ref={boc}>
-      <button className="nut-lon" onClick={() => setMo(v => !v)}>
+      <button className="nut-lon" ref={nut} onClick={() => setMo(v => !v)}>
         <span className="hinh">{icon}</span>
         <span>{ten} ▾</span>
       </button>
       {mo && (
-        <div className="menu-xo">
+        <div className="menu-xo" ref={bang} style={{ left: viTri.x, top: viTri.y }}>
           {muc.map((m, i) => (
             <button key={i} className="muc-menu" disabled={m.tat}
                     title={m.tat ? m.lyDo : undefined}
@@ -68,6 +93,7 @@ const I = {
   group: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="3" y="4.5" width="16" height="13" rx="2" /><path {...S} d="M6.5 8.5h9M6.5 11.5h9M6.5 14.5h5" /></svg>,
   action: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M12.5 2.5 5 12.5h4.6L8.5 19.5 16 9.5h-4.6z" /></svg>,
   /* Một đường vào, hai đường ra — đúng hình rẽ nhánh người dùng vẽ trên giấy. */
+  clock: <svg viewBox="0 0 22 22" width="22" height="22"><circle {...S} cx="11" cy="11.6" r="7.2" /><path {...S} d="M11 7.6v4l2.6 1.5" /></svg>,
   branch: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M2.5 11h5M7.5 11l5-5M7.5 11l5 5" /><circle {...S} cx="15.5" cy="6" r="2.6" /><circle {...S} cx="15.5" cy="16" r="2.6" /></svg>,
   rename: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M13.5 4.5l4 4L8 18H4v-4z" /><path {...S} d="M11.5 6.5l4 4" /></svg>,
   copy: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="7" y="7" width="11" height="11" rx="1.8" /><path {...S} d="M14.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v8.7" /></svg>,
@@ -91,6 +117,7 @@ export interface RibbonProps {
   themNhom: () => void
   themHanhDong: () => void
   themReNhanh: () => void
+  themDelay: () => void
   sua: () => void
   datBatDau: () => void
   nhanBan: () => void
@@ -123,6 +150,8 @@ export default function Ribbon(p: RibbonProps) {
         <Nut ten="Rẽ nhánh" icon={I.branch} onClick={p.themReNhanh}
              title={'Thêm cổng "Xác nhận mod" — nối nhiều cổng vào cùng một khối để '
                     + 'chia nhánh theo mod. Khớp thì đi nhánh đó, không khớp thì thử nhánh dưới.'} />
+        <Nut ten="Delay" icon={I.clock} onClick={p.themDelay}
+             title="Thêm khối Delay NGAY, không mở hộp thoại. Double-click vào khối nếu muốn đổi thời gian." />
       </Nhom>
 
       <Nhom ten="Sửa">

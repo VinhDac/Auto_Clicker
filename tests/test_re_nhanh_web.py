@@ -11,6 +11,7 @@ là chuỗi phân cấp nên nó phải nở ngang được, nếu không chữ 
 Bắn sự kiện thẳng vào DOM, không đụng chuột thật -> nhóm AN_TOAN.
 """
 import _boot  # noqa: F401
+import _web
 
 import os
 import sys
@@ -81,10 +82,8 @@ def main():
 
     def than():
         try:
-            for _ in range(90):
-                time.sleep(0.15)
-                if js("!!document.querySelector('.hop')"):
-                    break
+            _web.cho_san_sang(js)
+            _web.mo_mau(js)
             time.sleep(1.4)
             js(JS_TIEN_ICH)
 
@@ -110,6 +109,32 @@ def main():
             sau = js("document.querySelectorAll('.react-flow__node').length")
             ghi.append(("khối cổng đã nằm trên canvas", sau == truoc + 1,
                         f"— {truoc} → {sau} khối"))
+
+            # --- 1b. Nút Delay: thêm THẲNG, KHÔNG mở hộp thoại ---
+            # Đây là điểm khác biệt duy nhất so với 4 nút còn lại, và cũng là toàn bộ
+            # lý do nút này tồn tại — thêm mà vẫn bắt bấm Lưu thì chẳng nhanh hơn gì.
+            truoc_d = js("document.querySelectorAll('.react-flow__node').length")
+            js("window.__R.bam(window.__R.nutRibbon('Delay'))")
+            time.sleep(1.0)
+            sau_d = js("document.querySelectorAll('.react-flow__node').length")
+            ghi.append(("nút Delay thêm được khối", sau_d == truoc_d + 1,
+                        f"— {truoc_d} → {sau_d}"))
+            ghi.append(("nút Delay KHÔNG mở hộp thoại (đó là cả mục đích của nó)",
+                        js("document.querySelectorAll('.lop-phu').length") == 0))
+            chu_delay = js("(()=>{const n=document.querySelectorAll('.react-flow__node');"
+                           "return n[n.length-1].querySelector('.hop').innerText"
+                           ".replace(/\\s+/g,' ').trim()})()")
+            ghi.append(("khối Delay dùng được ngay, có sẵn thời gian mặc định",
+                        "ms" in chu_delay, f"— \"{chu_delay[:60]}\""))
+            # dọn lại cho phần sau không bị lệch chỉ số
+            js("(()=>{const n=document.querySelectorAll('.react-flow__node');"
+               "const e=n[n.length-1];"
+               "e.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,view:window,button:0}));"
+               "e.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,view:window,button:0}));"
+               "e.dispatchEvent(new MouseEvent('click',{bubbles:true,view:window,button:0}))})()")
+            time.sleep(0.3)
+            js("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true}))")
+            time.sleep(0.6)
 
             # --- 2. Nối thành điểm rẽ, xem nhãn có lên huy hiệu ---
             phang = js("window.__R.huyHieu()")

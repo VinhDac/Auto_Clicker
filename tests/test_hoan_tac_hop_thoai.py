@@ -16,6 +16,7 @@ Bài này bắn sự kiện thẳng vào DOM nên không giành chuột của ng
 Process mẫu có sẵn 3 khối: Loop 5 hành động, Nhóm 2 hành động, HĐ lẻ.
 """
 import _boot  # noqa: F401
+import _web
 
 import os
 import sys
@@ -80,10 +81,8 @@ def main():
 
     def than():
         try:
-            for _ in range(90):
-                time.sleep(0.15)
-                if js("!!document.querySelector('.hop')"):
-                    break
+            _web.cho_san_sang(js)
+            _web.mo_mau(js)
             time.sleep(1.2)
             js(JS_TIEN_ICH)
             khoi_dau = js("window.__D.soKhoi()")

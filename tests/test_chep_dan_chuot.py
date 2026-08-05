@@ -12,6 +12,7 @@ cách giữa các khối. Văng mỗi cái một nơi thì coi như phải xếp
 Bài này ĐIỀU KHIỂN CHUỘT THẬT -> nhóm CHUOT_THAT (chỉ chạy với --full).
 """
 import _boot  # noqa: F401
+import _web
 
 import os
 import sys
@@ -75,10 +76,8 @@ def main():
 
     def than():
         try:
-            for _ in range(90):
-                time.sleep(0.15)
-                if js("!!document.querySelector('.hop')"):
-                    break
+            _web.cho_san_sang(js)
+            _web.mo_mau(js)
             time.sleep(1.6)
 
             ra = []
