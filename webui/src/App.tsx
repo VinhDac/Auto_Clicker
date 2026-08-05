@@ -14,6 +14,8 @@ import ActionDialog from './components/ActionDialog'
 import SettingsDialog from './components/SettingsDialog'
 import TemplatePicker from './components/TemplatePicker'
 import ContextMenu, { type MucPhai } from './components/ContextMenu'
+import TitleBar, { type NhomMenu } from './components/TitleBar'
+import { useKhungCuaSo } from './useKhungCuaSo'
 import type { MucMenu } from './components/Ribbon'
 
 const nodeTypes = { buoc: StepNode }
@@ -136,6 +138,8 @@ function Ung() {
      đổi viewport không làm component này vẽ lại, nên con số đứng im mãi ở giá trị
      lúc render lần cuối (lỗi có sẵn — bấm zoom mà số không nhúc nhích). */
   const mucZoom = useStore(st => st.transform[2])
+  /* Kéo + giãn cửa sổ: phải do WEB khởi động, xem chú thích trong useKhungCuaSo. */
+  useKhungCuaSo(32)
 
   const lui = useRef<Anh[]>([])
   const toi = useRef<Anh[]>([])
@@ -532,6 +536,14 @@ function Ung() {
     ghi(`đã dán ${moi.length} khối`)
   }, [chup, setNodes, setEdges, ghi, diemDan])
 
+  const processMoi = useCallback(async () => {
+    const r = await py.new_process()
+    if (!r.ok || !r.value) { ghi('không tạo được Process mới: ' + r.error, 'err'); return }
+    chup()
+    setNodes([]); setEdges([]); setTen(r.value.name); setStartDelay(r.value.start_delay)
+    ghi('Process mới — canvas trống')
+  }, [chup, setNodes, setEdges, ghi])
+
   /** Mở Process mẫu — 3 khối có sẵn để xem thử giao diện làm được những gì.
    *  Không còn tự hiện lúc khởi động, nhưng vẫn phải với tới được. */
   const moMau = useCallback(async () => {
@@ -839,11 +851,63 @@ function Ung() {
     { nhan: 'Process mẫu (xem thử)', chay: moMau },
   ]
 
+  /* 4 menu trên thanh tiêu đề. Cố ý KHÔNG tạo hành động mới nào — tất cả trỏ về
+     đúng những hàm ribbon đang gọi, nên hai nơi không thể lệch nhau. */
+  const menuTieuDe: NhomMenu[] = useMemo(() => [
+    { ten: 'File', muc: [
+      { ten: 'Process mới', icon: 'plus', onClick: processMoi },
+      { ten: 'Mở Process…', icon: 'folder', onClick: () => setMoPicker({
+          kind: 'process', tieuDe: 'Mở Process',
+          xong: t => { setMoPicker(null); moProcess(t) } }) },
+      { ten: 'Mở từ file…', onClick: moFile },
+      { ten: 'Process mẫu (xem thử)', onClick: moMau },
+      { ngan: true },
+      { ten: 'Lưu thành template…', icon: 'save', onClick: luu },
+      { ten: 'Lưu ra file khác…', onClick: luuRaFile },
+      { ngan: true },
+      { ten: 'Cài đặt…', icon: 'gear', onClick: () => setMoCaiDat(true) },
+      { ten: 'Thoát', onClick: () => py.cua_so_dong() },
+    ] },
+    { ten: 'Edit', muc: [
+      { ten: 'Hoàn tác', icon: 'undo', tat: !coLui, viSao: 'chưa có gì để hoàn tác',
+        onClick: hoanTac },
+      { ten: 'Làm lại', icon: 'redo', tat: !coToi, viSao: 'chưa hoàn tác gì',
+        onClick: lamLai },
+      { ngan: true },
+      { ten: 'Chép', icon: 'copy', tat: !dangChon.length, viSao: 'chưa chọn khối nào',
+        onClick: chepKhoi },
+      { ten: 'Dán', icon: 'paste', onClick: () => danKhoi() },
+      { ten: 'Nhân bản', icon: 'plus', tat: !dangChon.length,
+        viSao: 'chưa chọn khối nào', onClick: nhanBan },
+      { ten: 'Xoá', icon: 'trash', tat: !dangChon.length,
+        viSao: 'chưa chọn khối nào', onClick: xoa },
+    ] },
+    { ten: 'View', muc: [
+      { ten: 'Phóng to', onClick: () => zoomIn({ duration: 150 }) },
+      { ten: 'Thu nhỏ', onClick: () => zoomOut({ duration: 150 }) },
+      { ten: 'Vừa khung', onClick: () => fitView({ padding: 0.2, duration: 300 }) },
+      { ngan: true },
+      { ten: panelGap ? 'Hiện bảng dưới' : 'Ẩn bảng dưới',
+        onClick: () => setPanelGap(v => !v) },
+      { ngan: true },
+      { ten: 'Xem điểm trên màn hình', icon: 'target', onClick: xemDiem },
+    ] },
+    { ten: 'Help', muc: [
+      { ten: 'Hướng dẫn (mở GitHub)',
+        onClick: () => window.open('https://github.com/VinhDac/Auto_Clicker', '_blank') },
+      { ten: `Giới thiệu — Auto Clicker${boot?.version ? ' ' + boot.version : ''}`,
+        tat: true, viSao: 'chỉ để xem' },
+    ] },
+  ], [processMoi, moFile, moMau, luu, luuRaFile, moProcess, hoanTac, lamLai, coLui, coToi,
+      chepKhoi, danKhoi, nhanBan, xoa, dangChon, zoomIn, zoomOut, fitView, panelGap,
+      xemDiem, boot])
+
   const soLoi = vanDe.filter(v => v.severity === 'error').length
   const soCanhBao = vanDe.length - soLoi
 
   return (
     <div className="khung">
+      <TitleBar tieuDe={`${ten} — Auto Clicker`} menus={menuTieuDe} />
       <Ribbon
         themLoop={() => themKhoi('loop')}
         themNhom={() => themKhoi('group')}

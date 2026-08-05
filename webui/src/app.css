@@ -22,6 +22,55 @@ input, textarea { user-select: text; }
   height: 100%;
 }
 
+/* ---------------- Thanh tiêu đề tự vẽ ----------------
+   Thay hẳn caption của Windows. Bắt buộc phải tự vẽ vì Win10 không cho đổi màu
+   caption hệ thống. Khoảng trống ở giữa (chỗ `.ten-cua-so`) CHÍNH LÀ vùng kéo cửa
+   sổ — Python báo cho Windows nó là HTCAPTION, nên nó không cần nghe chuột. */
+.thanh-tieu-de {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 32px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.logo-app { width: 16px; height: 16px; margin: 0 8px 0 10px; }
+.menu-tren {
+  height: 100%;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: 12.5px var(--font);
+  cursor: pointer;
+}
+.menu-tren:hover, .menu-tren.dang-mo { background: var(--raised-hover); }
+.ten-cua-so {
+  flex: 1 1 auto;
+  text-align: center;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Vùng này là caption với Windows nên chuột không tới được — tắt luôn cho rõ ý. */
+  pointer-events: none;
+}
+.nut-cua-so { display: flex; height: 100%; }
+.nut-cs {
+  width: 46px;
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.nut-cs:hover { background: var(--raised-hover); }
+/* Nút Đóng hover đỏ — quy ước của Windows, thiếu là thấy lạ ngay. */
+.nut-cs.dong:hover { background: #c42b1c; color: #fff; }
+
 /* ---------------- Ribbon kiểu Paint ---------------- */
 /* Đây là dải điều khiển DUY NHẤT. Trước còn một dải riêng ở trên cho tên Process
    và nút Chạy — trong khi bên phải ribbon bỏ trống 254px. Gộp lại: canvas cao

@@ -126,8 +126,15 @@ def main():
                 # `boc.contains(e.target)` nhận vào Window chứ không phải Node và ném
                 # TypeError — handler chết giữa chừng, menu không đóng. Chuột thật
                 # không bao giờ rơi vào tình huống đó.
-                js("document.querySelector('.vung-canvas').dispatchEvent("
-                   "new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}))")
+                # PHẢI kèm toạ độ thật. MouseEvent không có clientX/Y thì mặc định
+                # (0,0) — tức góc trên-trái cửa sổ, đúng vùng kéo giãn, và hook khung
+                # cửa sổ chặn sự kiện lại (đúng như nó phải làm). Bắn ở giữa canvas.
+                js("(()=>{const c=document.querySelector('.vung-canvas');"
+                   "const r=c.getBoundingClientRect();"
+                   "c.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,"
+                   "cancelable:true,view:window,"
+                   "clientX:Math.round(r.left+r.width/2),"
+                   "clientY:Math.round(r.top+r.height/2)}))})()")
                 time.sleep(0.4)
                 ghi.append((f"[{nut} ▾] bấm ra ngoài thì đóng", not js("!!window.__N.bang()")))
 

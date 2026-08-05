@@ -27,6 +27,7 @@ AN_TOAN = [
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
     ("test_re_nhanh.py", "Rẽ nhánh theo mod: confirm_mod, đánh số phân cấp, bộ chạy"),
     ("test_re_nhanh_web.py", "Rẽ nhánh phía giao diện: nút ribbon, nhãn lên huy hiệu (~7s)"),
+    ("test_thanh_tieu_de.py", "Thanh tiêu đề tự vẽ: đúng màu, không mất tính năng cửa sổ (~9s)"),
     ("test_menu_ribbon_web.py", "Menu xổ Lưu/Mở: không bị ribbon cắt cụt (~8s)"),
     ("test_ghi_phim_web.py", "Ghi phím bằng cách bấm phím thật (~9s)"),
     ("test_menu_phai_web.py", "Menu chuột phải: nền / khối / dây (~9s)"),
@@ -39,6 +40,7 @@ AN_TOAN = [
 CHUOT_THAT = [
     ("test_overlay_tien_trinh_con.py", "Overlay chạy tiến trình con cho giao diện web (~8s)"),
     ("test_chep_dan_chuot.py", "Dán NHIỀU khối: Ctrl+click chọn nhiều, cụm giữ hình (~12s)"),
+    ("test_khung_chuot.py", "Kéo/giãn/double-click cửa sổ bằng chuột THẬT (~40s)"),
     ("test_e2e_web.py", "E2E: app web thật còn phản hồi sau mỗi thao tác (~25s)"),
 ]
 

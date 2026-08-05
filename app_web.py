@@ -36,6 +36,32 @@ def duong_dan_giao_dien():
     return os.path.join(HERE, "webui", "dist", "index.html")
 
 
+def tim_cua_so(chua_chuoi=TIEU_DE_GOC):
+    """HWND của cửa sổ app. Khớp theo CHUỖI CON vì tiêu đề đổi theo tên Process.
+
+    Cửa sổ không khung VẪN có tiêu đề Win32 (taskbar, Alt+Tab, và mấy bài test dò
+    theo tên đều dựa vào nó) — chỉ là Windows không vẽ nó ra nữa."""
+    import ctypes
+    from ctypes import wintypes
+    ra = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def duyet(h, _):
+        n = ctypes.windll.user32.GetWindowTextLengthW(h)
+        if n and ctypes.windll.user32.IsWindowVisible(h):
+            b = ctypes.create_unicode_buffer(n + 1)
+            ctypes.windll.user32.GetWindowTextW(h, b, n + 1)
+            if chua_chuoi in b.value:
+                ra.append(h)
+        return True
+
+    try:
+        ctypes.windll.user32.EnumWindows(duyet, 0)
+    except Exception:
+        return None
+    return ra[0] if ra else None
+
+
 def thanh_tieu_de_toi(chua_chuoi=TIEU_DE_GOC):
     """Bôi đen thanh tiêu đề Windows cho khớp giao diện tối.
 
@@ -87,19 +113,33 @@ def main():
         width=1280, height=820,
         min_size=(980, 640),
         background_color="#202020",       # tránh chớp trắng trước khi CSS kịp chạy
+        # Bỏ khung hệ thống để tự vẽ thanh tiêu đề đúng màu app. Windows 10 không cho
+        # đổi màu caption gốc (`DWMWA_CAPTION_COLOR` trả E_INVALIDARG — đã đo), nên
+        # đây là đường duy nhất. Mọi tính năng của cửa sổ được vá lại trong
+        # `khung_cua_so.py`; vá hỏng thì app vẫn chạy, chỉ là không có viền.
+        frameless=True,
+        easy_drag=False,      # cách kéo của pywebview đi qua IPC mỗi mousemove và
+                              # giết Aero Snap — ta để Windows tự kéo bằng HTCAPTION
     )
     # Api cần cửa sổ để ĐẨY nhật ký chạy ngược về JS (JS không hỏi liên tục được).
     # Đặt tên có '_': pywebview đệ quy vào thuộc tính công khai của js_api
     # và sẽ treo cứng nếu chạm vào đối tượng Window (xem chú thích trong api.py).
     api._window = win
+    api._log_khoi_dong = lambda m: print(f"[khởi động] {m}", file=sys.stderr)
     # Đóng cửa sổ giữa lúc đang chạy: phải dừng worker, thả phím đang giữ và gỡ phím
     # dừng toàn cục — nếu không Shift kẹt trong cả Windows sau khi tắt app.
     win.events.closing += api.dong_app
 
     def sau_khi_mo():
         import time
-        time.sleep(0.35)                  # đợi cửa sổ được map xong mới bôi đen được
-        thanh_tieu_de_toi()
+        time.sleep(0.35)                  # đợi cửa sổ được map xong mới vá được
+        h = tim_cua_so()
+        if h and api._khung.va(h):
+            api._log_khoi_dong("đã vá khung cửa sổ (thanh tiêu đề tự vẽ)")
+        else:
+            # Không vá được thì thôi: app vẫn dùng được, chỉ là cửa sổ không viền và
+            # không kéo giãn. Thà vậy còn hơn không mở nổi.
+            api._log_khoi_dong("KHÔNG vá được khung cửa sổ — chạy với khung trần")
 
     # debug MẶC ĐỊNH TẮT. Bật lên thì pywebview mở luôn cửa sổ DevTools đè lên app —
     # tiện cho người viết code, nhưng người dùng thì chẳng hiểu cửa sổ đó ở đâu ra.

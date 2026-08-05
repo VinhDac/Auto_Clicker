@@ -24,6 +24,7 @@ import subprocess
 import traceback
 
 import core
+import khung_cua_so
 
 # Chạy từ nguồn thì overlay là "python overlays.py <mode>".
 # Đóng gói .exe thì không có python.exe -> gọi lại CHÍNH exe đó với cờ --overlay,
@@ -148,6 +149,11 @@ class Api:
         self._trang_thai = None
         self._hotkey = None
         self._hotkey_raw = None
+        # Trạng thái vá khung cửa sổ (thanh tiêu đề tự vẽ). Tên có '_' như mọi thuộc
+        # tính khác ở đây: pywebview đệ quy vào thuộc tính CÔNG KHAI của js_api để
+        # dựng danh sách hàm, chạm phải đối tượng không gọi được là treo cứng.
+        self._khung = khung_cua_so.KhungTuVe()
+        self._log_khoi_dong = lambda m: None      # app_web gắn vào
 
     # ---------------- đẩy sự kiện sang JS ----------------
     def _ban(self, ten, du_lieu):
@@ -402,6 +408,44 @@ class Api:
         `abyss_cond_display` biết ngưỡng số — JS đừng tự ghép lại mấy thứ đó."""
         f = core.abyss_cond_display if kind == "abyss" else core.cond_display
         return {"ok": True, "value": [f(c) for c in (conds or [])]}
+
+    # ---------------- cửa sổ (thanh tiêu đề tự vẽ) ----------------
+    @_bat_loi
+    def vung_khong_keo(self, vung, cao):
+        """Web báo chỗ nào trên thanh tiêu đề là logo/menu/nút — đừng coi là caption.
+
+        Phải gọi lại mỗi khi cửa sổ đổi kích thước: cụm 3 nút bám mép phải nên toạ độ
+        của nó đổi theo. Không cập nhật thì bấm nút Đóng lại hoá ra kéo cửa sổ."""
+        self._khung.dat_vung_cam(vung, cao)
+        return {"ok": True, "value": None}
+
+    @_bat_loi
+    def keo_cua_so(self, ht):
+        """Web báo "người dùng vừa bấm giữ ở dải tiêu đề / sát mép" -> Windows tự kéo.
+
+        `ht` là mã vùng: 2 = kéo cả cửa sổ, 10..17 = giãn theo từng cạnh/góc."""
+        return {"ok": True, "value": self._khung.bat_dau_keo(ht)}
+
+    @_bat_loi
+    def cua_so_thu_nho(self):
+        self._window.minimize()
+        return {"ok": True, "value": None}
+
+    @_bat_loi
+    def cua_so_phong_to(self):
+        """Phóng to / khôi phục. Trả về trạng thái MỚI để nút đổi icon cho đúng."""
+        self._khung.phong_to_hay_khoi_phuc(self._window)
+        return {"ok": True, "value": self._khung.dang_phong_to()}
+
+    @_bat_loi
+    def cua_so_dang_phong_to(self):
+        return {"ok": True, "value": self._khung.dang_phong_to()}
+
+    @_bat_loi
+    def cua_so_dong(self):
+        self.dong_app()
+        self._window.destroy()
+        return {"ok": True, "value": None}
 
     @_bat_loi
     def ghi_phim(self, key, code=""):

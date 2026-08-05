@@ -86,6 +86,15 @@ export const py = {
     goi<string[]>('describe_conditions', conds, kind),
   action_defaults: (t: string) => goi<Record<string, unknown>>('action_defaults', t),
   ghi_phim: (key: string, code: string) => goi<string>('ghi_phim', key, code),
+
+  // --- cửa sổ (thanh tiêu đề tự vẽ) ---
+  vung_khong_keo: (vung: number[][], cao: number) =>
+    goi<null>('vung_khong_keo', vung, cao),
+  keo_cua_so: (ht: number) => goi<boolean>('keo_cua_so', ht),
+  cua_so_thu_nho: () => goi<null>('cua_so_thu_nho'),
+  cua_so_phong_to: () => goi<boolean>('cua_so_phong_to'),
+  cua_so_dang_phong_to: () => goi<boolean>('cua_so_dang_phong_to'),
+  cua_so_dong: () => goi<null>('cua_so_dong'),
   get_mods: (game?: string) => goi<string[]>('get_mods', game ?? null),
 
   // --- chạy / dừng ---
