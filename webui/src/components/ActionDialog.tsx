@@ -3,6 +3,7 @@ import { py } from '../api'
 import type { Bootstrap } from '../types'
 import Modal from './Modal'
 import Icon from './Icon'
+import OGhiPhim from './OGhiPhim'
 
 /** Hộp thoại sửa 1 hành động — dựng lại đúng bố cục của bản tkinter.
  *
@@ -52,9 +53,13 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
   const [chonCond, setChonCond] = useState(-1)
   const [chonExcl, setChonExcl] = useState(-1)
   const [keoCond, setKeoCond] = useState<number | null>(null)
+  /** Đang chờ người dùng bấm một phím để ghi lại (hành động "Nhấn phím"). */
+  /** Đang chờ bấm phím -> phải khoá Esc ở Modal, xem chú thích trong OGhiPhim. */
+  const [dangGhi, setDangGhi] = useState(false)
   const oDauTien = useRef<HTMLInputElement>(null)
 
   const t: string = d.type
+
   const laDiem = boot.point_types.includes(t)
   // `confirm_mod` cấu hình y hệt `check_mod` (điểm rê chuột + bảng điều kiện) — cố ý
   // dùng chung khung soạn, để chỉ phải học MỘT bộ điều kiện. Khác nhau nằm ở việc
@@ -342,10 +347,16 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
     )
   } else if (t === 'key_press') {
     than = (
-      <O nhan="Phím (vd: enter, a, space, escape):" rong>
-        <input ref={oDauTien} className="o" style={{ width: 140 }} value={d.key ?? ''}
-               onChange={e => dat('key', e.target.value)} spellCheck={false} />
-      </O>
+      <>
+        <O nhan="Phím:" rong>
+          <OGhiPhim giaTri={String(d.key ?? '')} oRef={oDauTien}
+                    onDoi={v => dat('key', v)} onDangGhi={setDangGhi} />
+        </O>
+        <Goi>{dangGhi
+          ? 'Bấm phím bạn muốn — kể cả Esc, Tab, F1… Bấm lại nút đó để thôi.'
+          : 'Bấm nút bên cạnh rồi gõ phím thật, khỏi phải nhớ tên phím. '
+            + 'Hoặc tự gõ vào ô: enter, a, space, escape, f5, num1…'}</Goi>
+      </>
     )
   } else if (t === 'delay') {
     than = (
@@ -434,7 +445,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
   }
 
   return (
-    <Modal title="Hành động" width={560} onClose={onDong}
+    <Modal title="Hành động" width={560} onClose={onDong} khoaEsc={dangGhi}
            footer={<>
              {loi && <span className="loi-chan">{loi}</span>}
              <span className="day" />

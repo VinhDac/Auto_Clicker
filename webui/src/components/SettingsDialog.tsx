@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { py } from '../api'
 import type { Bootstrap } from '../types'
 import Modal from './Modal'
+import OGhiPhim from './OGhiPhim'
 
 /** ⚙ Cài đặt — dựng lại đúng bố cục hộp thoại cũ: Game, 4 ô số/phím, khung "Giao diện"
  *  (màu nhấn, đổi là thấy ngay), khung "Danh sách mod" (⟳ cập nhật từ mạng).
@@ -24,6 +25,9 @@ export default function SettingsDialog({ boot, onLuu, onDong, doiMauNgay }: {
   const [accent, setAccent] = useState(String(s.accent ?? '#ffa657'))
   const [loi, setLoi] = useState<string | null>(null)
   const [tinMod, setTinMod] = useState('')
+  /** Đang chờ bấm phím dừng -> khoá Esc ở Modal, không thì bấm Esc để ghi lại đóng
+   *  mất hộp Cài đặt. */
+  const [dangGhi, setDangGhi] = useState(false)
 
   function datMau(m: string) {
     setAccent(m)
@@ -46,7 +50,7 @@ export default function SettingsDialog({ boot, onLuu, onDong, doiMauNgay }: {
   }
 
   return (
-    <Modal title="⚙ Cài đặt" width={470} onClose={onDong}
+    <Modal title="⚙ Cài đặt" width={470} onClose={onDong} khoaEsc={dangGhi}
            footer={<>
              {loi && <span className="loi-chan">{loi}</span>}
              <span className="day" />
@@ -63,7 +67,6 @@ export default function SettingsDialog({ boot, onLuu, onDong, doiMauNgay }: {
         ['Delay trước click (ms):', pre, setPre],
         ['Chờ tooltip hiện (ms):', hover, setHover],
         ['Phím copy item:', copy, setCopy],
-        ['Phím dừng khẩn:', hotkey, setHotkey],
       ] as [string, string, (v: string) => void][]).map(([nhan, v, dat]) => (
         <div className="hang" key={nhan}>
           <label className="nhan-o" style={{ width: 170 }}>{nhan}</label>
@@ -71,6 +74,21 @@ export default function SettingsDialog({ boot, onLuu, onDong, doiMauNgay }: {
                  onChange={e => dat(e.target.value)} spellCheck={false} />
         </div>
       ))}
+
+      {/* Tách riêng khỏi mấy hàng trên vì có thêm nút ghi phím. Chỗ này đáng làm hơn
+          cả hành động "Nhấn phím": gõ sai tên phím thì phím dừng IM LẶNG không chạy,
+          và bạn phát hiện ra đúng lúc đang cần dừng gấp. */}
+      <div className="hang">
+        <label className="nhan-o" style={{ width: 170 }}>Phím dừng khẩn:</label>
+        <OGhiPhim giaTri={hotkey} rong={120}
+                  onDoi={setHotkey} onDangGhi={setDangGhi} />
+      </div>
+      <div className="goi-y">
+        {dangGhi
+          ? 'Bấm phím bạn muốn dùng làm phím dừng — kể cả Esc, F1… Bấm lại nút đó để thôi.'
+          : 'Đây là phím bấm để dừng khẩn giữa chừng. Bấm nút bên cạnh rồi gõ phím thật '
+            + 'cho chắc — gõ sai tên phím thì nó im lặng không chạy.'}
+      </div>
 
       <fieldset className="khung-nhom">
         <legend>Giao diện</legend>

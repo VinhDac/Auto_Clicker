@@ -7,20 +7,30 @@ import { useEffect, type ReactNode } from 'react'
  * niệm grab, và nội dung đã dựng xong trước khi trình duyệt vẽ — hai lớp lỗi đó
  * không tồn tại nữa.
  */
-export default function Modal({ title, width = 560, onClose, footer, children }: {
+export default function Modal({ title, width = 560, onClose, footer, children, khoaEsc }: {
   title: string
   width?: number
   onClose: () => void
   footer?: ReactNode
   children: ReactNode
+  /** Tạm khoá phím Esc.
+   *
+   *  Cần cho lúc "bấm phím để ghi": Escape là phím hay ghi nhất (đóng panel trong
+   *  game), mà nó cũng là phím đóng hộp thoại. Không khoá thì bấm Esc để ghi lại
+   *  thành đóng luôn hộp thoại — và ô nhập phím không bao giờ ghi được Escape.
+   *
+   *  Không sửa được bằng cách chặn ở nơi khác: listener của Modal gắn `capture:true`
+   *  trên window từ lúc mở, nên nó luôn chạy TRƯỚC mọi listener đăng ký sau. */
+  khoaEsc?: boolean
 }) {
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
+      if (khoaEsc) return
       if (e.key === 'Escape') { e.stopPropagation(); onClose() }
     }
     window.addEventListener('keydown', f, true)
     return () => window.removeEventListener('keydown', f, true)
-  }, [onClose])
+  }, [onClose, khoaEsc])
 
   return (
     <div className="lop-phu" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>

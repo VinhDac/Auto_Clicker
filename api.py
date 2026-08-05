@@ -404,6 +404,17 @@ class Api:
         return {"ok": True, "value": [f(c) for c in (conds or [])]}
 
     @_bat_loi
+    def ghi_phim(self, key, code=""):
+        """Người dùng bấm một phím thật -> tên phím pyautogui.
+
+        JS chỉ chuyển nguyên `event.key` / `event.code` sang chứ KHÔNG tự quy đổi:
+        thứ chạy được hay không là do pyautogui quyết, mà chỉ Python nhìn thấy nó."""
+        ten, loi = core.key_from_browser(key, code)
+        if loi:
+            return {"ok": False, "error": loi}
+        return {"ok": True, "value": ten}
+
+    @_bat_loi
     def action_defaults(self, action_type):
         """Giá trị mặc định khi đổi sang một loại hành động khác trong hộp thoại."""
         return {"ok": True, "value": _hanh_dong_mac_dinh(action_type)}

@@ -85,6 +85,7 @@ export const py = {
   describe_conditions: (conds: unknown[], kind = 'check_mod') =>
     goi<string[]>('describe_conditions', conds, kind),
   action_defaults: (t: string) => goi<Record<string, unknown>>('action_defaults', t),
+  ghi_phim: (key: string, code: string) => goi<string>('ghi_phim', key, code),
   get_mods: (game?: string) => goi<string[]>('get_mods', game ?? null),
 
   // --- chạy / dừng ---

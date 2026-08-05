@@ -1364,6 +1364,64 @@ def parse_hold_keys(s):
     return [k.strip().lower() for k in (s or "").split("+") if k.strip()]
 
 
+# Tên phím của TRÌNH DUYỆT -> tên phím của pyautogui.
+# Bảng này nằm ở core chứ không ở JS, cùng lý do với mọi thứ khác: JS không được
+# biết định dạng dữ liệu, nó chỉ hỏi. Ở đây còn một lý do nữa — thứ chạy được hay
+# không là do pyautogui quyết, mà pyautogui thì chỉ Python nhìn thấy.
+PHIM_TRINH_DUYET = {
+    " ": "space", "spacebar": "space", "escape": "escape", "esc": "escape",
+    "enter": "enter", "return": "enter", "tab": "tab", "backspace": "backspace",
+    "delete": "delete", "del": "delete", "insert": "insert",
+    "home": "home", "end": "end", "pageup": "pageup", "pagedown": "pagedown",
+    "arrowup": "up", "arrowdown": "down", "arrowleft": "left", "arrowright": "right",
+    "control": "ctrl", "shift": "shift", "alt": "alt", "meta": "win", "os": "win",
+    "capslock": "capslock", "numlock": "numlock", "scrolllock": "scrolllock",
+    "printscreen": "printscreen", "pause": "pause", "contextmenu": "apps",
+    "dead": "", "unidentified": "",
+}
+
+
+def key_from_browser(key, code=""):
+    """(tên_phím_pyautogui, lý_do_lỗi). Đúng một trong hai vế có giá trị.
+
+    Người dùng bấm phím thật, trình duyệt đưa `key` (ký tự/nhãn) và `code` (vị trí
+    vật lý). Ưu tiên `key` vì nó đúng theo bố cục bàn phím đang dùng; chỉ dùng `code`
+    khi `key` vô nghĩa (numpad, phím chết, IME).
+
+    Bắt buộc chốt lại bằng `is_valid_key`: pyautogui nhận tên phím sai thì IM LẶNG
+    không làm gì, nên thà báo ngay lúc ghi còn hơn để người dùng phát hiện lúc chạy
+    thật với item thật."""
+    key = str(key or "")
+    code = str(code or "")
+
+    # NUMPAD XÉT TRƯỚC: phím số trên numpad có `key` trùng hệt phím số hàng trên
+    # ("1"), chỉ `code` mới phân biệt được — mà game thì gán được hai phím đó khác
+    # nhau. Xét sau `key` là numpad vĩnh viễn ghi thành phím hàng trên.
+    m = re.fullmatch(r"Numpad(\d)", code)
+    ten = ("num" + m.group(1)) if m else PHIM_TRINH_DUYET.get(key.lower())
+
+    if ten is None:
+        if len(key) == 1:
+            ten = key.lower()                  # chữ, số, dấu — lấy nguyên
+        elif re.fullmatch(r"[fF]\d{1,2}", key):
+            ten = key.lower()                  # F1..F24
+
+    if not ten and code:
+        # `key` vô nghĩa (phím chết, IME tiếng Việt) -> lần theo vị trí vật lý.
+        if code == "NumpadEnter":
+            ten = "enter"
+        elif re.fullmatch(r"Key([A-Z])", code):
+            ten = code[-1].lower()
+        elif re.fullmatch(r"Digit(\d)", code):
+            ten = code[-1]
+
+    if not ten:
+        return None, f'không nhận ra phím "{key or code}" — hãy gõ tên phím vào ô bên cạnh'
+    if not is_valid_key(ten):
+        return None, f'pyautogui không hiểu phím "{ten}" — hãy gõ tên phím vào ô bên cạnh'
+    return ten, None
+
+
 def is_valid_key(k):
     """pyautogui có hiểu tên phím này không?
 
