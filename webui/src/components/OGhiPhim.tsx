@@ -21,7 +21,7 @@ export default function OGhiPhim({ giaTri, onDoi, onDangGhi, rong = 140, oRef }:
   /** Báo lên cha để cha khoá phím Esc ở Modal của nó suốt lúc đang chờ ghi. */
   onDangGhi?: (b: boolean) => void
   rong?: number
-  oRef?: React.RefObject<HTMLInputElement | null>
+  oRef?: React.RefObject<HTMLInputElement>
 }) {
   const [dangGhi, setDangGhi] = useState(false)
   const [loi, setLoi] = useState('')

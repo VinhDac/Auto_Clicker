@@ -453,7 +453,7 @@ function Ung() {
 
   const chay = useCallback(async (boQua = false) => {
     const steps = rf_sang_steps(nodes)
-    const r = await py.run(ten, steps, startDelay, boQua)
+    const r = await py.run(ten, steps, rf_sang_edges(edges), startDelay, boQua)
     if (!r.ok) {
       if ((r as any).can_hoi) {
         const ds = ((r as any).canh_bao as Problem[]).map(p => '⚠ ' + p.message).join('\n\n')
@@ -469,7 +469,7 @@ function Ung() {
     setTab('nhat-ky')
     setTrangThai('đang chạy…')
     ghi(`▶ Bắt đầu — nhấn ${r.value?.hotkey ?? 'F6'} để dừng bất cứ lúc nào`, 'ok')
-  }, [nodes, ten, startDelay, ghi])
+  }, [nodes, edges, ten, startDelay, ghi])
 
   const dung = useCallback(async () => {
     await py.stop()
@@ -894,9 +894,9 @@ function Ung() {
     ] },
     { ten: 'Help', muc: [
       { ten: 'Hướng dẫn (mở GitHub)',
-        onClick: () => window.open('https://github.com/VinhDac/Auto_Clicker', '_blank') },
-      { ten: `Giới thiệu — Auto Clicker${boot?.version ? ' ' + boot.version : ''}`,
-        tat: true, viSao: 'chỉ để xem' },
+        onClick: () => py.mo_trang('https://github.com/VinhDac/Auto_Clicker') },
+      { ten: `Auto Clicker ${boot?.phien_ban ?? ''} — giao diện web`.trim(),
+        tat: true, viSao: 'chỉ để xem phiên bản' },
     ] },
   ], [processMoi, moFile, moMau, luu, luuRaFile, moProcess, hoanTac, lamLai, coLui, coToi,
       chepKhoi, danKhoi, nhanBan, xoa, dangChon, zoomIn, zoomOut, fitView, panelGap,

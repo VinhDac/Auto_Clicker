@@ -9,6 +9,10 @@ hỏng thì "Chọn điểm", "Căn khung Abyss", "Căn lưới inventory" chế
 những phần người dùng thích nhất.
 """
 import _boot  # noqa: F401  (đặt sys.path + chdir + stdout UTF-8)
+import _web
+
+# Màn hình khoá thì không đo được gì — bỏ qua, đừng báo đỏ oan.
+_web.bo_qua_neu_khoa_man_hinh()
 
 import os
 import sys
@@ -44,7 +48,17 @@ def chay(mode, args=(), lai_xe=None, cho=2.0):
             time.sleep(cho)
             lai_xe()
         threading.Thread(target=sau, daemon=True).start()
-    out, err = p.communicate(timeout=60)
+    try:
+        out, err = p.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        # PHẢI giết tiến trình con. Overlay là cửa sổ TRONG SUỐT PHỦ TOÀN MÀN HÌNH và
+        # bắt hết click — bỏ nó sống sót thì nó nuốt sạch chuột của mọi bài chạy sau,
+        # và của cả người đang ngồi máy. Đã dính: một lần timeout ở đây làm 3 bài
+        # chuột-thật phía sau đỏ hết với "18/18 bước lệch", mất công truy oan sang
+        # tính năng cửa sổ.
+        p.kill()
+        p.communicate()
+        raise
     return p.returncode, out.decode("utf-8", "replace").strip()
 
 

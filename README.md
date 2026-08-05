@@ -12,7 +12,7 @@ App đọc mod của item bằng cách rê chuột vào item và bấm `Ctrl+C` 
 
 > ### [⬇ Tải bản mới nhất (.zip)](../../releases/latest)
 
-Giải nén ra rồi bấm đúp `AutoClicker.exe`. **Giữ nguyên cả thư mục** — các file bên cạnh là thư viện cần để chạy.
+Giải nén ra rồi bấm đúp `AutoClickerWeb.exe`. **Giữ nguyên cả thư mục** — các file bên cạnh là thư viện cần để chạy.
 
 **Không cần cài Python**, không cần cài gì thêm.
 
@@ -22,7 +22,9 @@ Lần đầu chạy Windows sẽ cảnh báo — [xem cách xử lý bên dướ
 
 ## Làm được gì
 
+- **Sơ đồ kéo-thả.** Kéo các khối ra canvas rồi nối lại thành luồng chạy — nhìn là hiểu, không phải đọc danh sách. Góc mỗi khối có số thứ tự chạy do chính bộ máy tính ra, nên nó không thể nói khác việc app làm.
 - **Chuỗi nhiều bước.** Một *Process* gồm nhiều *Action_Loop* nối tiếp, xen được các hành động chạy 1 lần ở giữa. Ví dụ: spam Alteration → dùng Regal 1 lần → spam Exalt.
+- **Rẽ nhánh theo mod.** Nối nhiều cổng *Xác nhận mod* vào cùng một khối: trúng mod A đi đường A, trúng mod B đi đường B. Cổng thử lần lượt từ trên xuống, nhánh không có cổng là nhánh mặc định và phải xếp dưới cùng. Nhãn ở góc khối cho biết luôn nhánh nào chạy trước (`4A`, `4B`, `4A.2`…).
 - **Dừng đúng lúc.** Thêm hành động *Kiểm tra mod*; khớp là dừng ngay, **không táp thêm một orb nào nữa**.
 - **Chọn mod từ danh sách chính thức.** Lấy từ Trade API của game (~3.200 mod PoE2 / ~8.600 PoE1), gõ để tìm rồi chọn — không phải gõ tay nên không sai chính tả.
 - **Lọc mod thuần / mod hybrid.** Một affix cho nhiều dòng stat (vd Armour + Energy Shield) có bậc Tier riêng, khác hẳn mod thuần cùng tên. Chọn được: cả hai / chỉ mod thuần / chỉ mod hybrid.
@@ -30,7 +32,8 @@ Lần đầu chạy Windows sẽ cảnh báo — [xem cách xử lý bên dướ
 - **Soát lỗi trước khi chạy.** Panel *Vấn đề* chỉ ra chỗ sai (chưa chọn điểm, chưa có điều kiện, toạ độ nằm ngoài màn hình…) và bấm vào là nhảy tới đúng chỗ.
 - **Nhật ký chạy.** Xem diễn biến từng bước, từng vòng, kèm lý do khi bỏ qua.
 - **Lưu lại dùng lần sau.** Lưu cả Process, hoặc lưu riêng một Action_Loop để chèn vào Process khác.
-- Các hành động: trái/phải-click, double-click, di chuyển, cuộn, nhấn phím, **giữ phím + click** (Shift/Ctrl-click), delay ngẫu nhiên, kiểm tra mod.
+- Các hành động: trái/phải-click, di chuyển (WASD), nhấn phím, **giữ phím + click** (Shift/Ctrl-click), delay ngẫu nhiên, kiểm tra mod, xác nhận mod (rẽ nhánh), Abyss.
+- **Khỏi nhớ tên phím.** Hành động *Nhấn phím* và ô *Phím dừng khẩn* đều có nút bấm-để-ghi: gõ phím thật, app tự điền.
 - **Dừng khẩn cấp bất cứ lúc nào:** phím `F6`, hoặc hất chuột vào **góc trên-trái** màn hình.
 
 ---
@@ -124,6 +127,7 @@ python update_mods.py poe2       # chỉ PoE2
 core.py             lõi — không phụ thuộc giao diện, chạy headless được
 api.py              bề mặt DUY NHẤT giao diện web gọi tới  (JS → api.py → core.py)
 app_web.py          khởi động cửa sổ (pywebview + WebView2)
+khung_cua_so.py     vá cửa sổ Win32 cho thanh tiêu đề tự vẽ (kéo/giãn/phóng to)
 webui/              giao diện: React + TypeScript + React Flow
 overlay_ui.py       4 overlay tkinter phủ màn hình (chọn điểm, căn khung, căn lưới)
 overlays.py         chạy 4 overlay đó như tiến trình con
@@ -142,6 +146,13 @@ docs/               tài liệu ý tưởng ban đầu
   dạng file**; nó chỉ gửi/nhận JSON. Nhờ vậy đổi định dạng chỉ phải sửa một nơi.
 - `webui/` chỉ lo hiển thị. Ngay cả dòng mô tả hành động cũng do Python sinh
   (`core.action_display`), để hai bên không thể nói khác nhau.
+
+**Vì sao thanh tiêu đề phải tự vẽ:** Windows 10 không cho đổi màu thanh tiêu đề hệ
+thống (`DWMWA_CAPTION_COLOR` là của Win11, trên Win10 trả `E_INVALIDARG`). Bỏ khung
+rồi tự vẽ là cách duy nhất — và `khung_cua_so.py` vá lại từng tính năng đã mất: viền
+kéo giãn, phóng to đúng vùng làm việc (không che taskbar), menu hệ thống. Việc kéo cửa
+sổ do **web** khởi động rồi giao cho vòng lặp của chính Windows, vì WebView2 là cửa sổ
+con phủ kín cửa sổ app nên cửa sổ cha không bao giờ nhận được chuột.
 
 **Vì sao 4 overlay vẫn là tkinter:** chúng là cửa sổ trong suốt phủ lên cửa sổ game để
 bắt click và đọc pixel — WebView2 không làm được. Chúng chạy trong **tiến trình con**

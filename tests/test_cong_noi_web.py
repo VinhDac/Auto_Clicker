@@ -97,10 +97,18 @@ def main():
             js(JS_TIEN_ICH)
 
             # --- 1. Kích thước: stylesheet của mình phải thắng stylesheet gốc ---
-            rong = js("(()=>{const r=document.querySelector('.react-flow__handle')"
-                      ".getBoundingClientRect(); return Math.round(r.width)})()")
-            ghi.append(("cổng rộng 24px (gốc React Flow là 6px)", rong >= 20,
-                        f"— đo được {rong}px"))
+            # ĐO BẰNG CSS, không bằng getBoundingClientRect: rect co giãn theo mức thu
+            # phóng của canvas, mà mức đó lại phụ thuộc chiều cao canvas — thêm thanh
+            # tiêu đề vào là fitView chọn mức khác và phép đo "22px" tụt xuống 18px dù
+            # chẳng có gì hỏng. CSS width thì bất biến.
+            rong = js("getComputedStyle(document.querySelector('.react-flow__handle')).width")
+            ghi.append(("cổng khai 24px (gốc React Flow là 6px)", rong == "24px",
+                        f"— {rong}"))
+            phong = js("(()=>{const v=document.querySelector('.react-flow__viewport');"
+                       "const m=new DOMMatrixReadOnly(getComputedStyle(v).transform);"
+                       "return Math.round(m.a*100)/100})()")
+            ghi.append(("đọc được mức thu phóng để quy đổi các phép đo sau", phong > 0,
+                        f"— {phong}×"))
             ghi.append(("chấm nhìn thấy vẫn nhỏ gọn 9px",
                         js("window.__T.cham(document.querySelector('.react-flow__handle'))") == "9px"))
 
@@ -109,8 +117,12 @@ def main():
                        "return document.elementFromPoint(t.x,t.y)===h})()")
             ghi.append(("tâm cổng bấm là trúng cổng, không bị .hop che", trung))
             bk = js("window.__T.banKinhBam(window.__T.cong(0,'right'))")
-            ghi.append(("lệch tâm 9px mọi hướng vẫn trúng", bk >= 9,
-                        f"— bán kính bấm {bk}px, trước khi sửa là 3px"))
+            # Ngưỡng tính theo mức phóng: bán kính thật là 11px ở 100%, co lại theo
+            # canvas. Ngưỡng cứng sẽ đỏ oan mỗi lần bố cục đổi một chút.
+            nguong = max(4, round(9 * phong))
+            ghi.append(("lệch gần hết bán kính vẫn trúng", bk >= nguong,
+                        f"— bán kính bấm {bk}px ở mức phóng {phong}× "
+                        f"(cần ≥{nguong}, trước khi sửa là 3px ở 100%)"))
 
             so_khoi = js("document.querySelectorAll('.react-flow__node').length")
             truoc = js("document.querySelectorAll('.react-flow__edge').length")

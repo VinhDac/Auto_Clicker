@@ -24,6 +24,8 @@ Bài này CHIẾM CHUỘT ~40 giây -> nhóm CHUOT_THAT (chỉ chạy với --fu
 import _boot  # noqa: F401
 import _web
 
+_web.bo_qua_neu_khoa_man_hinh()
+
 import io, os, sys, time, ctypes
 from ctypes import wintypes
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

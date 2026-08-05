@@ -38,6 +38,37 @@ window.__W = {
 """
 
 
+def man_hinh_dung_duoc():
+    """(dùng_được, lý_do) — phiên Windows này có desktop tương tác không?
+
+    Máy KHOÁ MÀN HÌNH thì `GetSystemMetrics` trả 640x480 và `SetCursorPos` không đi
+    đâu cả (`GetCursorPos` luôn ra 0,0). Mọi bài điều khiển chuột sẽ đỏ toàn tập với
+    những con số vô nghĩa — đã mất công truy oan sang tính năng cửa sổ vì chuyện này.
+    Thà BỎ QUA và nói rõ, còn hơn báo đỏ một thứ không hỏng."""
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    w, h = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+    if w < 800 or h < 600:
+        return False, f"màn hình báo {w}x{h} — phiên không có desktop tương tác (máy đang khoá?)"
+    u.SetCursorPos(int(w // 2), int(h // 2))
+    p = wintypes.POINT()
+    u.GetCursorPos(ctypes.byref(p))
+    if abs(p.x - w // 2) > 5 or abs(p.y - h // 2) > 5:
+        return False, f"đặt con trỏ vào giữa màn hình nhưng nó nằm ở ({p.x},{p.y}) — không điều khiển được chuột"
+    return True, ""
+
+
+def bo_qua_neu_khoa_man_hinh():
+    """Gọi ở ĐẦU mọi bài dùng chuột thật. Thoát êm (mã 0) nếu không đo được."""
+    import sys
+    ok, ly_do = man_hinh_dung_duoc()
+    if not ok:
+        print(f"  ⊘ BỎ QUA — {ly_do}")
+        print("\n✔ KẾT QUẢ: 0 đúng / 0 sai   (không chạy được, không phải lỗi)")
+        sys.exit(0)
+
+
 def cho_san_sang(js, giay=14.0):
     """Chờ app bootstrap xong. Trả True nếu kịp."""
     import time

@@ -228,8 +228,17 @@ class Api:
 
     # ---------------- chạy / dừng ----------------
     @_bat_loi
-    def run(self, name, steps, start_delay=3, bo_qua_canh_bao=False):
+    def run(self, name, steps, edges=None, start_delay=3, bo_qua_canh_bao=False):
         """Chạy cả Process trong luồng riêng.
+
+        `edges` BẮT BUỘC phải truyền vào từ giao diện. Trước đây hàm này không nhận
+        `edges` và hậu quả rất nặng, im lặng, không test nào bắt được:
+          · `validate_process` bị gọi thiếu `edges` -> TOÀN BỘ phần soát đồ thị (luật
+            rẽ nhánh, vòng lặp, id trùng, khối không tới được) bị bỏ qua trước khi chạy;
+          · `cfg` không có khoá `edges` -> bộ chạy rơi về `default_edges` = CHUỖI THẲNG
+            theo thứ tự danh sách, tức bỏ qua sạch mọi đường nối người dùng vẽ.
+        Nói cách khác: bấm Chạy thì rẽ nhánh không tồn tại. Sơ đồ vẽ một đằng, app
+        chạy một nẻo — đúng thứ mà cả hệ thống đánh số sinh ra để chống.
 
         Trả về ngay lập tức — KHÔNG chờ chạy xong. Nếu chờ thì cầu nối bị khoá và cả
         giao diện đứng hình suốt lúc chạy (có thể hàng giờ), kể cả nút Dừng.
@@ -241,7 +250,7 @@ class Api:
         if not steps:
             return {"ok": False, "error": "Process chưa có bước nào"}
 
-        probs = core.validate_process(steps)
+        probs = core.validate_process(steps, edges=edges)
         loi = [p for p in probs if p.get("severity") == "error"]
         canh_bao = [p for p in probs if p.get("severity") != "error"]
         if loi:
@@ -256,6 +265,7 @@ class Api:
             "name": name or "Process 1",
             "game": s.get("game", "poe2"),
             "steps": steps,
+            "edges": edges,
             "start_delay": max(0, int(start_delay or 0)),
             "pre_click_ms": int(s.get("pre_click_ms", 60)),
             "hover_ms": int(s.get("hover_ms", 250)),
@@ -347,6 +357,7 @@ class Api:
         s = core.load_settings()
         return {"ok": True, "value": {
             "settings": s,
+            "phien_ban": core.PHIEN_BAN,
             "action_types": list(core.ACTION_TYPES),
             "action_labels": dict(core.ACTION_LABELS),
             "template_kinds": list(core.TEMPLATE_KINDS),
@@ -417,6 +428,20 @@ class Api:
         Phải gọi lại mỗi khi cửa sổ đổi kích thước: cụm 3 nút bám mép phải nên toạ độ
         của nó đổi theo. Không cập nhật thì bấm nút Đóng lại hoá ra kéo cửa sổ."""
         self._khung.dat_vung_cam(vung, cao)
+        return {"ok": True, "value": None}
+
+    @_bat_loi
+    def mo_trang(self, url):
+        """Mở một địa chỉ web bằng TRÌNH DUYỆT THẬT của máy.
+
+        Không dùng `window.open` bên JS: WebView2 không có sẵn handler cho cửa sổ mới
+        nên lời gọi đó lặng lẽ không làm gì — nút bấm vào không phản ứng, đúng kiểu
+        lỗi vặt khó chịu nhất. Chỉ nhận http/https, khỏi mở nhầm thứ khác."""
+        u = str(url or "")
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return {"ok": False, "error": f"địa chỉ không hợp lệ: {u[:40]}"}
+        import webbrowser
+        webbrowser.open(u)
         return {"ok": True, "value": None}
 
     @_bat_loi

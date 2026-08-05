@@ -75,6 +75,8 @@ KEEP_LABELS = {"Explicit", "Implicit"}
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
+PHIEN_BAN = "2.0"          # bản giao diện web (bản tkinter là 1.x)
+
 SETTINGS_DEFAULT = {
     "game": "poe2",
     "pre_click_ms": 60,
@@ -773,6 +775,37 @@ def validate_flow_graph(steps, edges):
 
     theo_id, ke = flow_map(steps, edges)
 
+    # ---- Khối trùng id ----
+    # `flow_map` tra theo id nên hai khối cùng id thì một cái BIẾN MẤT khỏi sơ đồ:
+    # không nhãn, không nằm trong "không bao giờ chạy tới", không dấu vết gì. Người
+    # dùng nhìn canvas thấy đủ khối, chạy thì thiếu. File chép tay hoặc sửa tay là ra.
+    dem_id = {}
+    for s_ in ds:
+        dem_id[s_["id"]] = dem_id.get(s_["id"], 0) + 1
+    for sid, n in dem_id.items():
+        if n > 1:
+            ra.append({"severity": "error", "step": sid, "index": None,
+                       "message": f'Có {n} khối trùng id với nhau ("{step_title(theo_id[sid])}") '
+                                  f"— chỉ MỘT cái được chạy, những cái còn lại biến mất khỏi "
+                                  f"sơ đồ mà không báo gì. Hãy xoá bớt rồi tạo lại."})
+
+    # ---- Đường nối trỏ về chính nó ----
+    # Không chặn thì nó thành "một nhánh của chính mình" và thông báo lỗi rẽ nhánh
+    # bên dưới sẽ nói những câu vô nghĩa kiểu 'khối 2 rẽ ra 2 nhánh: "2" và "3"'.
+    for e in (edges or []):
+        if e.get("from") and e.get("from") == e.get("to") and e["from"] in theo_id:
+            ra.append({"severity": "error", "step": e["from"], "index": None,
+                       "message": f'"{step_title(theo_id[e["from"]])}" có đường nối trỏ về '
+                                  f"CHÍNH NÓ — chạy tới đây là quay lại chính mình mãi mãi."})
+
+    # ---- Cổng khớp rồi mà phía sau trống ----
+    for sid, st_ in theo_id.items():
+        if is_branch_gate(st_) and not ke.get(sid):
+            ra.append({"severity": "warning", "step": sid, "index": None,
+                       "message": f'"{step_title(st_)}" khớp điều kiện rồi thì không có gì '
+                                  f"phía sau — Process kết thúc ngay tại đó. Nối tiếp một khối "
+                                  f"vào nếu bạn muốn nhánh này làm gì đó."})
+
     # ---- Luật rẽ nhánh ----
     # Nhiều đường ra KHÔNG còn là lỗi, nhưng phải quyết định được đi đường nào. Ở
     # điểm rẽ các nhánh được thử lần lượt trên->dưới, nên mỗi nhánh phải mở đầu bằng
@@ -823,6 +856,20 @@ def validate_flow_graph(steps, edges):
         ra.append({"severity": "error", "step": None, "index": None,
                    "message": "Không tìm được bước bắt đầu — mọi bước đều có đường nối "
                               "đi vào. Hãy gỡ bớt một đường để có chỗ khởi đầu."})
+    if kq.get("loop"):
+        # Nối ngược lên trên là HỢP LỆ (vòng lặp ở tầng Process), nhưng phải nói ra:
+        # nó chỉ dừng khi chạm trần MAX_PROCESS_STEPS, và nếu vòng đi qua một điểm rẽ
+        # thì MỖI VÒNG là một lần rê chuột + Ctrl+C đọc item. Vòng vô tình = nện
+        # clipboard hàng nghìn lần trong game.
+        qua_diem_re = any(len(v) > 1 for v in ke.values())
+        ra.append({"severity": "warning", "step": None, "index": None,
+                   "message": ("Đường nối tạo thành VÒNG LẶP ở tầng Process. Nó chỉ dừng khi "
+                               f"chạy đủ {MAX_PROCESS_STEPS} bước"
+                               + (" — và vì vòng đi qua điểm rẽ nhánh, mỗi vòng là một lần "
+                                  "đọc chữ item, tức là hàng nghìn lần Ctrl+C trong game."
+                                  if qua_diem_re else ".")
+                               + " Muốn lặp thì nên dùng khối Action_Loop.")})
+
     for sid in kq["unreachable"]:
         ra.append({"severity": "warning", "step": sid, "index": None,
                    "message": f'"{step_title(theo_id[sid])}" không bao giờ chạy tới — '
@@ -2555,7 +2602,15 @@ class ProcessRunner:
         được chữ item -> DỪNG HẲN: không đọc được thì không biết đi đâu, mà đoán bừa
         một nhánh là làm bậy với currency của người dùng.
         """
+        da_qua = set()
         for _ in range(MAX_PROCESS_STEPS):
+            # Trong MỘT lần quyết định "đi đâu tiếp", không bao giờ được đánh giá lại
+            # một cổng đã đánh giá rồi: đó là vòng lặp, và mỗi lượt là một lần đọc item
+            # thật trong game. Trần MAX_PROCESS_STEPS ở vòng ngoài là quá muộn.
+            if cur in da_qua:
+                self.het_nhanh = True
+                return None
+            da_qua.add(cur)
             nhanh = ke_tiep.get(cur) or []
             if not nhanh:
                 return None
@@ -2696,8 +2751,10 @@ class ProcessRunner:
         # thứ không biết trước được (mỗi lần chạy đi một đường khác). Dùng đúng cái
         # nhãn đang hiện ở góc khối trên canvas thì nhật ký và sơ đồ nói cùng một thứ
         # tiếng: thấy "[4A.2]" trong log là biết ngay nhìn khối nào.
-        nhan_buoc = flow_order(steps, edges)["order"]
+        luong = flow_order(steps, edges)
+        nhan_buoc = luong["order"]
         total = len(nhan_buoc) or len(steps)
+        co_vong = bool(luong.get("loop"))
         pre_click_ms = cfg.get("pre_click_ms", 0)
         hover_ms = cfg.get("hover_ms", 250)
         copy_keys = [k.strip() for k in (cfg.get("copy_keys") or "ctrl+c").split("+") if k.strip()]
@@ -2708,6 +2765,13 @@ class ProcessRunner:
         si = 0
 
         self._log(f"▶ Bắt đầu Process \"{cfg.get('name', '')}\" — {total} bước", "ok")
+        if co_vong:
+            # Nói NGAY từ dòng đầu. Vòng lặp ở tầng Process chỉ dừng khi chạm trần
+            # MAX_PROCESS_STEPS, mà nếu vòng đi qua điểm rẽ thì mỗi vòng là một lần rê
+            # chuột + Ctrl+C — để người dùng phát hiện sau 50 phút là quá muộn.
+            self._log(f"⚠ Đường nối có VÒNG LẶP — Process chỉ tự dừng sau "
+                      f"{MAX_PROCESS_STEPS} bước. Nhấn {self.hotkey_label} để dừng sớm.",
+                      "warn")
 
         while cur and cur in theo_id:
             if self.stop_flag.is_set():
@@ -2726,6 +2790,9 @@ class ProcessRunner:
                 self._log(status, "warn")
                 break
             si += 1
+            if co_vong and si % 200 == 0:
+                self._log(f"⚠ đã chạy {si} bước và vẫn đang chạy — đường nối có vòng "
+                          f"lặp, nhấn {self.hotkey_label} để dừng", "warn")
             if si >= MAX_PROCESS_STEPS:
                 # Đồ thị cho phép nối ngược lên trên -> có thể tạo vòng lặp vô tận.
                 # Chốt chặn này để một cái nối sai không làm app chạy mãi.

@@ -57,6 +57,7 @@ echo [3/5] Dang dong goi Python...
   --add-data "data\mods_poe2.txt;." ^
   --add-data "assets\logo.ico;." ^
   --hidden-import overlays ^
+  --hidden-import khung_cua_so ^
   --hidden-import overlay_ui ^
   --hidden-import plyer.platforms.win.notification ^
   --hidden-import winrt.windows.foundation ^

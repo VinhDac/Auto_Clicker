@@ -18,6 +18,9 @@ BÀI HỌC VỀ PHÉP ĐO: phải khai `argtypes`/`restype` cho ctypes. Lần đ
 Bài này ĐIỀU KHIỂN CHUỘT THẬT nên nằm ở nhóm CHUOT_THAT (chỉ chạy với --full).
 """
 import _boot  # noqa: F401
+import _web
+
+_web.bo_qua_neu_khoa_man_hinh()
 
 import os
 import sys

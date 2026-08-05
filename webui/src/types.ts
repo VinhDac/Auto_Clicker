@@ -60,6 +60,7 @@ export interface ProcessDoc {
 }
 
 export interface Bootstrap {
+  phien_ban: string
   settings: Record<string, unknown>
   action_types: string[]
   action_labels: Record<string, string>

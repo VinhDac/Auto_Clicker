@@ -224,6 +224,81 @@ print("§12 — CHỐT CHẶN: js_api không được mang thuộc tính là Đ�
 # Luật: mọi thứ không phải hàm PHẢI có tên bắt đầu bằng "_".
 import inspect
 
+print("§13 — ĐƯỜNG NỐI phải tới được bộ chạy (lỗi từng lọt qua mọi bài test)")
+# `api.run` trước đây KHÔNG nhận `edges`. Hậu quả im lặng và rất nặng:
+#   · `validate_process` gọi thiếu edges -> bỏ qua sạch phần soát đồ thị trước khi chạy
+#   · `cfg` không có edges -> bộ chạy rơi về chuỗi thẳng, VỨT HẾT đường nối đã vẽ
+# Tức là bấm Chạy thì rẽ nhánh không tồn tại. Không bài test nào bắt được vì chưa bài
+# nào truyền edges qua `api.run` — chúng đều dựng `cfg` tay rồi gọi thẳng ProcessRunner.
+def _cong(m, x, y):
+    st = core.make_action_step({"type": core.CONFIRM_MOD, "point": [1, 1],
+                                "conditions": [{"mod": m, "tier": 1}], "name": m})
+    st["pos"] = [x, y]
+    return st
+
+
+def _viec(t, x, y):
+    st = core.make_group_step(t)
+    st["actions"] = [{"type": "key_press", "key": "escape"}]
+    st["pos"] = [x, y]
+    return st
+
+
+_b = {"1": _viec("đầu", 0, 200), "A": _cong("mA", 300, 0), "B": _cong("mB", 300, 400),
+      "A1": _viec("việc A", 600, 0), "B1": _viec("việc B", 600, 400),
+      "C": _viec("mặc định", 300, 800)}
+_cap = [("1", "A"), ("1", "B"), ("A", "A1"), ("B", "B1"), ("1", "C")]
+_steps = list(_b.values())
+_edges = [{"from": _b[x]["id"], "to": _b[y]["id"]} for x, y in _cap]
+
+# Chứng minh soát đồ thị CÓ chạy: dựng riêng một sơ đồ SAI LUẬT rẽ nhánh. Không kèm
+# edges thì `validate_process` mù tịt và `run` sẽ cho chạy thẳng.
+_bx = {"1": _viec("đầu", 0, 200), "X": _viec("không cổng 1", 300, 0),
+       "Y": _viec("không cổng 2", 300, 400)}
+_ex = [{"from": _bx["1"]["id"], "to": _bx[k]["id"]} for k in ("X", "Y")]
+_rx = api.Api().run("t", list(_bx.values()), _ex, 0)
+kiem("run CÓ soát đồ thị trước khi chạy (chặn được sơ đồ rẽ nhánh sai luật)",
+     _rx.get("ok") is False and any("không biết chọn nhánh nào" in p["message"]
+                                    for p in (_rx.get("loi") or [])),
+     f"— {_rx.get('error') or _rx}")
+
+# Bộ chạy phải đi theo DÂY: khối "việc B" chỉ tới được qua cổng B, còn theo thứ tự
+# danh sách thì nó là khối thứ 5.
+_nk = []
+
+
+def _doc_gia(a, sf, hv, k, log=None):
+    for c in a.get("conditions") or []:
+        if c.get("mod") == "mB":
+            return core.CHECK_MATCH, c
+    return core.CHECK_NO_MATCH, None
+
+
+_td, _tl = core.check_mod_action, core.do_action
+core.check_mod_action = _doc_gia
+core.do_action = lambda a, sf, ms: None
+try:
+    _A = api.Api()
+    # Nhật ký bị luồng `_bom_nhat_ky` hút khỏi hàng đợi rồi đẩy qua `_ban`, nên phải
+    # bắt ở `_ban` chứ không phải ở hàng đợi — đọc hàng đợi thì lúc nào cũng rỗng.
+    _A._ban = lambda ten, goi: _nk.extend(d.get("msg", "") for d in goi.get("log", []))
+    _r = _A.run("t", _steps, _edges, 0, bo_qua_canh_bao=True)
+    kiem("chạy được với đồ thị rẽ nhánh", _r["ok"], f"— {_r}")
+    cho_xong(_A, 15)
+    time.sleep(0.5)
+finally:
+    core.check_mod_action, core.do_action = _td, _tl
+
+_da = [m.split("[")[1].split("]")[0] for m in _nk if m.startswith(("▤ [", "⚡ [", "🔁 ["))]
+_kq = core.flow_order(_steps, _edges)
+_ng = {v["id"]: k for k, v in _b.items()}
+_nhan = {_ng[i]: n for i, n in _kq["order"].items()}
+kiem("bộ chạy đi ĐÚNG nhánh B, không chạy tuột theo danh sách",
+     _da == [_nhan["1"], _nhan["B1"]], f"— chạy {_da}, canvas {_nhan}")
+kiem("KHÔNG đụng vào nhánh A và nhánh mặc định",
+     _nhan["A1"] not in _da and _nhan["C"] not in _da, f"— {_da}")
+
+
 _a = api.Api()
 _xau = []
 for _ten in dir(_a):

@@ -14,6 +14,9 @@ Bài này ĐIỀU KHIỂN CHUỘT THẬT -> nhóm CHUOT_THAT (chỉ chạy với
 import _boot  # noqa: F401
 import _web
 
+# Man hinh khoa thi khong do duoc gi — bo qua, dung bao do oan.
+_web.bo_qua_neu_khoa_man_hinh()
+
 import os
 import sys
 import time

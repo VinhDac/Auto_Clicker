@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "kiem-kieu": "tsc --noEmit"
   },
   "dependencies": {
     "@xyflow/react": "^12.3.0",

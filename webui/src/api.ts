@@ -90,6 +90,7 @@ export const py = {
   // --- cửa sổ (thanh tiêu đề tự vẽ) ---
   vung_khong_keo: (vung: number[][], cao: number) =>
     goi<null>('vung_khong_keo', vung, cao),
+  mo_trang: (url: string) => goi<null>('mo_trang', url),
   keo_cua_so: (ht: number) => goi<boolean>('keo_cua_so', ht),
   cua_so_thu_nho: () => goi<null>('cua_so_thu_nho'),
   cua_so_phong_to: () => goi<boolean>('cua_so_phong_to'),
@@ -98,8 +99,11 @@ export const py = {
   get_mods: (game?: string) => goi<string[]>('get_mods', game ?? null),
 
   // --- chạy / dừng ---
-  run: (name: string, steps: Step[], startDelay: number, boQuaCanhBao = false) =>
-    goi<{ hotkey: string }>('run', name, steps, startDelay, boQuaCanhBao),
+  // `edges` phải gửi kèm: thiếu nó thì Python bỏ qua soát đồ thị VÀ chạy theo chuỗi
+  // thẳng, tức mọi đường nối trên canvas bị vứt đi.
+  run: (name: string, steps: Step[], edges: ProcEdge[], startDelay: number,
+        boQuaCanhBao = false) =>
+    goi<{ hotkey: string }>('run', name, steps, edges, startDelay, boQuaCanhBao),
   stop: () => goi<null>('stop'),
 
   // --- 3 overlay chọn trên màn hình (chạy tiến trình con tkinter) ---
