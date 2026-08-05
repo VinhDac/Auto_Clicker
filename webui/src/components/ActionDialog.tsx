@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { py } from '../api'
 import type { Bootstrap } from '../types'
 import Modal from './Modal'
+import Icon from './Icon'
 
 /** Hộp thoại sửa 1 hành động — dựng lại đúng bố cục của bản tkinter.
  *
@@ -192,7 +193,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
     </O>
   )
   const nutChonDiem = (
-    <button className="nut day-ngang" onClick={chonDiem}>🎯 Chọn điểm (crosshair)</button>
+    <button className="nut day-ngang" onClick={chonDiem}><Icon name="target" /> Chọn điểm (crosshair)</button>
   )
 
   const bangMod = (
@@ -228,11 +229,11 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
       </div>
       <div className="hang">
         <button className="nut" disabled={chonCond < 0}
-                onClick={() => { dat('conditions', (d.conditions ?? []).filter((_: unknown, i: number) => i !== chonCond)); setChonCond(-1) }}>🗑 Xoá</button>
+                onClick={() => { dat('conditions', (d.conditions ?? []).filter((_: unknown, i: number) => i !== chonCond)); setChonCond(-1) }}><Icon name="trash" /> Xoá</button>
         <button className="nut" disabled={chonCond < 0}
-                onClick={() => { const x = doiCho(d.conditions ?? [], chonCond, -1); if (x) { dat('conditions', x); setChonCond(chonCond - 1) } }}>⬆ Lên</button>
+                onClick={() => { const x = doiCho(d.conditions ?? [], chonCond, -1); if (x) { dat('conditions', x); setChonCond(chonCond - 1) } }}><Icon name="up" /> Lên</button>
         <button className="nut" disabled={chonCond < 0}
-                onClick={() => { const x = doiCho(d.conditions ?? [], chonCond, 1); if (x) { dat('conditions', x); setChonCond(chonCond + 1) } }}>⬇ Xuống</button>
+                onClick={() => { const x = doiCho(d.conditions ?? [], chonCond, 1); if (x) { dat('conditions', x); setChonCond(chonCond + 1) } }}><Icon name="down" /> Xuống</button>
       </div>
     </>
   )
@@ -252,7 +253,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
                  onChange={e => datDiem(1, e.target.value)} />
         </O>
         <button className="nut day-ngang" onClick={chonDiem} disabled={luoiBat}>
-          🎯 Chọn điểm (crosshair)
+          <Icon name="target" /> Chọn điểm (crosshair)
         </button>
         {t === 'right_click' && (
           <>
@@ -263,7 +264,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
               Nâng cao: lấy từ nhiều ô, hết ô này tự sang ô khác
             </label>
             <div className="hang">
-              <button className="nut" onClick={canLuoi} disabled={!luoiBat}>🖼 Căn lưới</button>
+              <button className="nut" onClick={canLuoi} disabled={!luoiBat}><Icon name="grid" /> Căn lưới</button>
               <span className="mo">
                 {!luoiBat ? '(đang tắt — dùng đúng 1 điểm X/Y ở trên)'
                   : !d.grid?.frame ? 'chưa căn lưới'
@@ -369,7 +370,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
           mod hybrid = 1 affix cho nhiều dòng stat (vd Armour + Energy Shield);<br />
           tier của họ hybrid KHÁC tier của mod thuần cùng tên
         </Goi>
-        <button className="nut" onClick={themDieuKien}>➕ Thêm điều kiện ↓</button>
+        <button className="nut" onClick={themDieuKien}><Icon name="plus" /> Thêm điều kiện ↓</button>
         {bangDieuKien}
       </>
     )
@@ -384,7 +385,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
         </Goi>
         {boot.ocr_reason && <div className="bao-loi">⚠ {boot.ocr_reason}</div>}
         <div className="hang">
-          <button className="nut" onClick={canKhungAbyss}>🖼 Căn khung Abyss</button>
+          <button className="nut" onClick={canKhungAbyss}><Icon name="frame" /> Căn khung Abyss</button>
           <span className="mo">
             {d.frame ? `(${d.frame[0]}, ${d.frame[1]})  ${d.frame[2]}×${d.frame[3]}` : 'chưa căn khung'}
           </span>
@@ -403,12 +404,12 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
           Mod 2 số (vd "Adds # to # Chaos damage") so theo giá trị trung bình.
         </Goi>
         <div className="hang">
-          <button className="nut" onClick={themDieuKien}>➕ Thêm điều kiện ↓</button>
-          <button className="nut" onClick={themLoaiTru}>⛔ Thêm vào loại trừ ↓</button>
+          <button className="nut" onClick={themDieuKien}><Icon name="plus" /> Thêm điều kiện ↓</button>
+          <button className="nut" onClick={themLoaiTru}><Icon name="ban" /> Thêm vào loại trừ ↓</button>
         </div>
         {bangDieuKien}
         <div className="tieu-de-phu">
-          ⛔ Loại trừ — không bao giờ chốt mấy mod này, kể cả lúc phải chọn bừa:
+          Loại trừ — không bao giờ chốt mấy mod này, kể cả lúc phải chọn bừa:
         </div>
         <div className="danh-sach cao-4">
           {dongExcl.map((s, i) => (
@@ -419,7 +420,7 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
         </div>
         <div className="hang">
           <button className="nut" disabled={chonExcl < 0}
-                  onClick={() => { dat('excludes', (d.excludes ?? []).filter((_: unknown, i: number) => i !== chonExcl)); setChonExcl(-1) }}>🗑 Xoá</button>
+                  onClick={() => { dat('excludes', (d.excludes ?? []).filter((_: unknown, i: number) => i !== chonExcl)); setChonExcl(-1) }}><Icon name="trash" /> Xoá</button>
           <span className="mo">cả 3 ô đều bị loại trừ → reroll; hết reroll thì DỪNG, không chốt bừa</span>
         </div>
       </>

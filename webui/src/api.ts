@@ -72,13 +72,16 @@ export const py = {
 
   new_step: (kind: string, actionType = 'left_click') =>
     goi<{ step: Step; card: Card }>('new_step', kind, actionType),
+  clone_steps: (steps: Step[]) =>
+    goi<{ steps: Step[]; map: Record<string, string>; cards: Card[] }>('clone_steps', steps),
   describe: (steps: Step[]) => goi<Card[]>('describe', steps),
   validate: (steps: Step[], edges: ProcEdge[]) => goi<Problem[]>('validate', steps, edges),
 
   // --- hộp thoại hành động ---
   save_action: (draft: Record<string, unknown>) =>
     goi<{ action: Record<string, unknown>; display: string }>('save_action', draft),
-  describe_actions: (actions: unknown[]) => goi<string[]>('describe_actions', actions),
+  describe_actions: (actions: unknown[]) =>
+    goi<{ text: string; type?: string | null }[]>('describe_actions', actions),
   describe_conditions: (conds: unknown[], kind = 'check_mod') =>
     goi<string[]>('describe_conditions', conds, kind),
   action_defaults: (t: string) => goi<Record<string, unknown>>('action_defaults', t),

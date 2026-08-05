@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ReactFlow, Background, BackgroundVariant, Controls, ConnectionMode,
-  useNodesState, useEdgesState, addEdge, useReactFlow, ReactFlowProvider, MarkerType,
+  ReactFlow, Background, BackgroundVariant, ConnectionMode,
+  useNodesState, useEdgesState, addEdge, useReactFlow, ReactFlowProvider, MarkerType, useStore,
   type Node, type Edge, type Connection, type NodeChange, type EdgeChange,
 } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
 
 import { py, cho_cau_noi } from './api'
 import type { Bootstrap, Card, ProcEdge, Problem, ProcessDoc, Step, StepKind } from './types'
@@ -18,11 +17,17 @@ import type { MucMenu } from './components/Ribbon'
 
 const nodeTypes = { buoc: StepNode }
 
-const MUI_TEN = { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#6a6a6a' }
+/** Mũi tên chỉ cần đủ để biết dây chạy về hướng nào. To quá thì nó nặng hơn cả cái
+ *  cổng nó cắm vào (cổng 9px, mũi tên cũ 16px) và hút mắt khỏi nội dung khối. */
+const MUI_TEN = { type: MarkerType.ArrowClosed, width: 10, height: 10, color: '#6a6a6a' }
 
 /** 'default' = đường bezier. Cố ý KHÔNG dùng 'smoothstep': hộp cao thấp khác nhau nên
  *  hai đầu nối hiếm khi cùng độ cao, đường bậc thang gãy khúc trông như lỗi vẽ. */
 const KIEU_DUONG_NOI = { type: 'default', animated: false, markerEnd: MUI_TEN }
+
+/** Giữ Ctrl HOẶC Shift rồi bấm để chọn thêm khối. Shift cũng là phím quét-khung
+ *  mặc định của React Flow, nên Shift+kéo trên nền vẫn quét chọn nhiều khối. */
+const PHIM_CHON_NHIEU = ['Control', 'Meta', 'Shift']
 
 /* ---------- đổi qua lại giữa tài liệu của Python và node/edge của React Flow ---------- */
 
@@ -74,6 +79,12 @@ const TOI_DA_UNDO = 60
 const CAO_TOI_THIEU = 90
 const CAO_GAP = 33
 
+/** Bộ nhớ tạm Ctrl+C/Ctrl+V cho KHỐI trên canvas. Giữ cả đường nối GIỮA các khối
+ *  được chép — chép 3 khối đang nối nhau mà mất dây thì coi như chép hụt.
+ *  Dùng bộ nhớ trong app, không dùng clipboard hệ điều hành: clipboard thật đang
+ *  phục vụ luồng đọc chữ item trong game. */
+let boNhoKhoi: { steps: Step[]; edges: ProcEdge[] } = { steps: [], edges: [] }
+
 /* --------------------------------- App ----------------------------------- */
 
 function Ung() {
@@ -98,11 +109,18 @@ function Ung() {
   /** Bảng dưới: chiều cao kéo được, và gập lại còn mỗi hàng tab. */
   const [panelCao, setPanelCao] = useState(176)
   const [panelGap, setPanelGap] = useState(false)
+  /** Đang kéo một đường nối. Bật lên thì MỌI cổng của MỌI khối hiện rõ — không thì
+      phải đoán xem thả vào đâu được. */
+  const [dangNoi, setDangNoi] = useState(false)
   const [moCaiDat, setMoCaiDat] = useState(false)
   /** Hộp chọn template đang mở: kind + việc sẽ làm với cái được chọn. */
   const [moPicker, setMoPicker] = useState<
     { kind: 'process' | 'loop' | 'group'; tieuDe: string; xong: (t: string) => void } | null>(null)
-  const { fitView, getZoom, setCenter } = useReactFlow()
+  const { fitView, zoomIn, zoomOut, setCenter } = useReactFlow()
+  /* Mức thu phóng phải ĐĂNG KÝ THEO DÕI, không gọi getZoom() lúc render: React Flow
+     đổi viewport không làm component này vẽ lại, nên con số đứng im mãi ở giá trị
+     lúc render lần cuối (lỗi có sẵn — bấm zoom mà số không nhúc nhích). */
+  const mucZoom = useStore(st => st.transform[2])
 
   const lui = useRef<Anh[]>([])
   const toi = useRef<Anh[]>([])
@@ -266,6 +284,11 @@ function Ung() {
     const moi: Node = { id: step.id, type: 'buoc', position: { x, y }, data: { step, card } }
     setNodes(n => [...n.map(k => ({ ...k, selected: false })), { ...moi, selected: true }])
     ghi(`thêm khối ${card.title}`)
+    // Mở luôn hộp thoại của khối vừa thêm. Loop/Nhóm mới là RỖNG, còn HĐ lẻ thì mặc
+    // định là một Trái-click giữa màn hình — cả ba đều vô nghĩa cho tới khi cấu hình.
+    // Bắt người dùng đi tìm rồi double-click là một bước thừa không đổi lại được gì.
+    // Chỉ muốn cái khối thôi thì Esc là xong.
+    setDangSua(step.id)
   }, [nodes, chup, setNodes, ghi])
 
   const xoa = useCallback(() => {
@@ -296,13 +319,15 @@ function Ung() {
     const n = dangChon[0]
     if (!n) return
     const d = n.data as { step: Step; card: Card }
+    // Id do core cấp — JS không tự nặn định dạng id.
+    const r = await py.clone_steps([d.step])
+    if (!r.ok || !r.value) { ghi('không nhân bản được: ' + r.error, 'err'); return }
     chup()
-    const id = 'c' + Math.random().toString(16).slice(2, 10)
-    const step: Step = { ...JSON.parse(JSON.stringify(d.step)), id }
-    const card: Card = { ...d.card, id, title: d.card.title + ' (bản sao)' }
+    const step = r.value.steps[0]
+    const card = { ...r.value.cards[0], title: r.value.cards[0].title + ' (bản sao)' }
     step.name = card.title
     setNodes(ds => [...ds.map(k => ({ ...k, selected: false })), {
-      id, type: 'buoc', position: { x: n.position.x + 40, y: n.position.y + 60 },
+      id: step.id, type: 'buoc', position: { x: n.position.x + 40, y: n.position.y + 60 },
       data: { step, card }, selected: true,
     }])
     ghi('nhân bản khối')
@@ -365,6 +390,43 @@ function Ung() {
     await py.stop()
     setTrangThai('đang dừng…')
   }, [])
+
+  /** Ctrl+C: chép các khối đang chọn + những đường nối NẰM GIỮA chúng. */
+  const chepKhoi = useCallback(() => {
+    if (!dangChon.length) return
+    const idChon = new Set(dangChon.map(n => n.id))
+    boNhoKhoi = {
+      steps: dangChon.map(n => JSON.parse(JSON.stringify((n.data as { step: Step }).step))),
+      edges: rf_sang_edges(edges).filter(e => idChon.has(e.from) && idChon.has(e.to)),
+    }
+    ghi(`đã chép ${dangChon.length} khối`)
+  }, [dangChon, edges, ghi])
+
+  /** Ctrl+V: dán ra bản sao có id MỚI, dịch xuống 40px, và nối lại y như bản gốc. */
+  const danKhoi = useCallback(async () => {
+    if (!boNhoKhoi.steps.length) return
+    const r = await py.clone_steps(boNhoKhoi.steps)
+    if (!r.ok || !r.value) { ghi('không dán được: ' + r.error, 'err'); return }
+    const { steps: moi, map, cards } = r.value
+    chup()
+    setNodes(ds => [...ds.map(k => ({ ...k, selected: false })), ...moi.map((st, i) => ({
+      id: st.id, type: 'buoc',
+      position: { x: (st.pos?.[0] ?? 80) + 40, y: (st.pos?.[1] ?? 120) + 40 },
+      data: { step: { ...st, pos: [(st.pos?.[0] ?? 80) + 40, (st.pos?.[1] ?? 120) + 40] }, card: cards[i] },
+      selected: true,
+    }))])
+    // Nối lại theo bảng tra id cũ→mới. Không remap là đường nối trỏ về bản GỐC.
+    setEdges(e => [...e, ...boNhoKhoi.edges
+      .filter(x => map[x.from] && map[x.to])
+      .map(x => ({
+        id: `${map[x.from]}->${map[x.to]}:${Date.now()}${Math.round(performance.now())}`,
+        source: map[x.from], target: map[x.to],
+        sourceHandle: (x as { from_side?: string }).from_side ?? 'right',
+        targetHandle: (x as { to_side?: string }).to_side ?? 'left',
+        markerEnd: MUI_TEN,
+      }))])
+    ghi(`đã dán ${moi.length} khối`)
+  }, [chup, setNodes, setEdges, ghi])
 
   const luu = useCallback(async () => {
     const t = window.prompt('Lưu Process với tên:', ten)
@@ -465,22 +527,41 @@ function Ung() {
     }, e))
   }, [chup, setEdges])
 
+  /** Double-click lên dây = huỷ kết nối.
+   *
+   *  Cùng một quy ước với khối: nhấp đúp lên thứ gì thì tác động lên chính thứ đó
+   *  (khối -> mở sửa, dây -> bỏ dây). Dây chỉ vẽ dày 1.8px nhưng React Flow phủ sẵn
+   *  một đường bắt chuột rộng 20px nên không cần nhắm chính xác.
+   *
+   *  Có `chup()` nên lỡ tay thì Ctrl+Z lấy lại được. */
+  const huyNoi = useCallback((ev: React.MouseEvent, d: Edge) => {
+    ev.stopPropagation()
+    chup()
+    setEdges(e => e.filter(k => k.id !== d.id))
+    ghi('đã huỷ 1 kết nối (Ctrl+Z để lấy lại)')
+  }, [chup, setEdges, ghi])
+
   /* ------------------------------ phím tắt ------------------------------- */
   useEffect(() => {
     const f = (ev: KeyboardEvent) => {
       const o = ev.target as HTMLElement
       if (o && (o.tagName === 'INPUT' || o.tagName === 'TEXTAREA')) return
+      // Hộp thoại đang mở thì phím tắt của canvas PHẢI im: nếu không, bấm Delete
+      // trong hộp thoại vừa xoá hành động vừa xoá luôn cả khối phía sau.
+      if (document.querySelector('.lop-phu')) return
       const ctrl = ev.ctrlKey || ev.metaKey
       if (ctrl && ev.key.toLowerCase() === 'z' && !ev.shiftKey) { ev.preventDefault(); hoanTac() }
       else if (ctrl && (ev.key.toLowerCase() === 'y' || (ev.shiftKey && ev.key.toLowerCase() === 'z'))) { ev.preventDefault(); lamLai() }
       else if (ctrl && ev.key.toLowerCase() === 'd') { ev.preventDefault(); nhanBan() }
+      else if (ctrl && ev.key.toLowerCase() === 'c') { ev.preventDefault(); chepKhoi() }
+      else if (ctrl && ev.key.toLowerCase() === 'v') { ev.preventDefault(); danKhoi() }
       else if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); luu() }
       else if (ev.key === 'Delete') { ev.preventDefault(); xoa() }
       else if (ev.key === 'F2') { ev.preventDefault(); doiTen() }
     }
     window.addEventListener('keydown', f)
     return () => window.removeEventListener('keydown', f)
-  }, [hoanTac, lamLai, nhanBan, luu, xoa, doiTen])
+  }, [hoanTac, lamLai, nhanBan, luu, xoa, doiTen, chepKhoi, danKhoi])
 
   /* Kéo hộp: chụp ảnh MỘT lần lúc bắt đầu kéo, không phải mỗi frame — nếu không thì
      một cú kéo tạo ra 60 bước undo và Ctrl+Z thành vô dụng. */
@@ -499,22 +580,22 @@ function Ung() {
   const laNhom = buocChon?.kind === 'group'
 
   const mucLuu: MucMenu[] = [
-    { nhan: '🏷 Đổi tên Process…', chay: doiTenProcess },
-    { nhan: '💾 Lưu cả Process thành template', chay: luu },
-    { nhan: '🔁 Lưu riêng Loop đang chọn', chay: () => luuBuoc('loop'),
+    { nhan: 'Đổi tên Process…', chay: doiTenProcess },
+    { nhan: 'Lưu cả Process thành template', chay: luu },
+    { nhan: 'Lưu riêng Loop đang chọn', chay: () => luuBuoc('loop'),
       tat: !laLoop, lyDo: 'chọn một Action_Loop trước' },
-    { nhan: '▤ Lưu riêng Nhóm đang chọn', chay: () => luuBuoc('group'),
+    { nhan: 'Lưu riêng Nhóm đang chọn', chay: () => luuBuoc('group'),
       tat: !laNhom, lyDo: 'chọn một Nhóm HĐ 1 lần trước' },
-    { nhan: '📄 Lưu ra file khác…', chay: luuRaFile },
+    { nhan: 'Lưu ra file khác…', chay: luuRaFile },
   ]
   const mucMo: MucMenu[] = [
-    { nhan: '📂 Mở Process (thay toàn bộ)',
+    { nhan: 'Mở Process (thay toàn bộ)',
       chay: () => setMoPicker({ kind: 'process', tieuDe: 'Mở Process', xong: t => { setMoPicker(null); moProcess(t) } }) },
-    { nhan: '➕ Chèn Loop có sẵn vào Process này',
+    { nhan: 'Chèn Loop có sẵn vào Process này',
       chay: () => setMoPicker({ kind: 'loop', tieuDe: 'Chèn Action_Loop', xong: t => { setMoPicker(null); chenBuoc('loop', t) } }) },
-    { nhan: '➕ Chèn Nhóm có sẵn vào Process này',
+    { nhan: 'Chèn Nhóm có sẵn vào Process này',
       chay: () => setMoPicker({ kind: 'group', tieuDe: 'Chèn Nhóm HĐ 1 lần', xong: t => { setMoPicker(null); chenBuoc('group', t) } }) },
-    { nhan: '📄 Mở từ file khác…', chay: moFile },
+    { nhan: 'Mở từ file khác…', chay: moFile },
   ]
 
   const soLoi = vanDe.filter(v => v.severity === 'error').length
@@ -527,40 +608,38 @@ function Ung() {
         themNhom={() => themKhoi('group')}
         themHanhDong={() => themKhoi('action')}
         sua={() => dangChon[0] && setDangSua(dangChon[0].id)} datBatDau={datBatDau}
-        doiTen={doiTen} nhanBan={nhanBan} xoa={xoa}
+        nhanBan={nhanBan} xoa={xoa}
         hoanTac={hoanTac} lamLai={lamLai}
         mucLuu={mucLuu} mucMo={mucMo} xemDiem={xemDiem}
+        ten={ten} datTen={setTen}
         startDelay={startDelay} datStartDelay={setStartDelay}
         chay={() => chay()} dung={dung} dangChay={dangChay}
-        moCaiDat={() => setMoCaiDat(true)}
         coChon={dangChon.length > 0}
         coTheHoanTac={coLui} coTheLamLai={coToi}
       />
 
-      {/* React Flow không có onPaneDoubleClick, nên bắt ở vỏ rồi loại trường hợp
-          double-click trúng một khối (khối đã có onNodeDoubleClick riêng). */}
-      <div className="vung-canvas"
-           onDoubleClick={e => {
-             if (!(e.target as HTMLElement).closest('.react-flow__node')) doiTenProcess()
-           }}>
+      <div className={'vung-canvas' + (dangNoi ? ' dang-noi' : '')}>
         <ReactFlow
           nodes={nodesCoSo} edges={edges}
           onNodesChange={onNodesChange as (c: NodeChange[]) => void}
           onEdgesChange={onEdgesChange as (c: EdgeChange[]) => void}
           onConnect={noi}
+          onConnectStart={() => setDangNoi(true)}
+          onConnectEnd={() => setDangNoi(false)}
           onNodeDragStart={batDauKeo}
           onNodeDragStop={ketThucKeo}
           onNodeDoubleClick={(_, n) => setDangSua(n.id)}
+          onEdgeDoubleClick={huyNoi}
           nodeTypes={nodeTypes}
           connectionMode={ConnectionMode.Loose}
           proOptions={{ hideAttribution: true }}
           minZoom={0.25} maxZoom={2}
           defaultEdgeOptions={KIEU_DUONG_NOI}
           deleteKeyCode={null}
+          multiSelectionKeyCode={PHIM_CHON_NHIEU}
           fitView
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--canvas-dot)" />
-          <Controls showInteractive={false} />
         </ReactFlow>
 
         {nodes.length === 0 && sanSang && (
@@ -610,7 +689,7 @@ function Ung() {
                        setNodes(ds => ds.map(k => ({ ...k, selected: k.id === id })))
                        const n = nodes.find(k => k.id === id)
                        if (n) setCenter(n.position.x + 148, n.position.y + 90,
-                                        { zoom: getZoom(), duration: 350 })
+                                        { zoom: mucZoom, duration: 350 })
                      }}>
                   <span className="muc">{v.severity === 'error' ? '●' : '▲'}</span>
                   <span>{v.message}</span>
@@ -632,6 +711,21 @@ function Ung() {
       </div>
 
       <div className="thanh-trang-thai">
+        {/* ⚙ nằm ở góc trái dưới cùng — chỗ quen thuộc cho cài đặt (VSCode cũng vậy),
+            và nó là thứ app-wide nên không thuộc về cụm chạy của Process. */}
+        <button className="nut-tt" onClick={() => setMoCaiDat(true)} title="Cài đặt">
+          {/* Bánh răng: vành ngoài + lỗ giữa + 8 RĂNG NGẮN VÀ DÀY. Bản đầu chỉ có
+              tâm nhỏ với 8 tia dài mảnh nên nhìn ra mặt trời chứ không ra bánh răng. */}
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor"
+               strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="4.9" strokeWidth="1.3" />
+            <circle cx="8" cy="8" r="1.9" strokeWidth="1.3" />
+            <g strokeWidth="2">
+              <path d="M8 1.3v1.4M8 13.3v1.4M14.7 8h-1.4M2.7 8H1.3" />
+              <path d="M12.7 3.3l-1 1M4.3 11.7l-1 1M12.7 12.7l-1-1M4.3 4.3l-1-1" />
+            </g>
+          </svg>
+        </button>
         <span><span className="so">{nodes.length}</span> khối</span>
         <span><span className="so">{edges.length}</span> đường nối</span>
         {soLoi > 0 && <span style={{ color: 'var(--err)' }}>{soLoi} lỗi</span>}
@@ -640,9 +734,21 @@ function Ung() {
         {dangChay && <span className="dang-chay">● đang chạy — {phimDung} để dừng</span>}
         <span className="day" />
         <span>{trangThai}</span>
-        {/* Bỏ nút −/+ ở đây: cụm điều khiển của React Flow ngay trên canvas đã có
-            zoom in / zoom out / vừa khung. Giữ lại CON SỐ vì nó là thông tin. */}
-        <span className="so">{Math.round(getZoom() * 100)}%</span>
+        {/* Ba nút thu phóng. Trước đây là cụm DỌC của React Flow nổi trên canvas —
+            nó che mất góc dưới-trái và trùng chức năng với thanh này. Gom về đây,
+            xếp ngang, ngay cạnh con số phần trăm mà chúng điều khiển. */}
+        <div className="cum-zoom">
+          <button className="nut-zoom" onClick={() => zoomOut()} title="Thu nhỏ">−</button>
+          <button className="nut-zoom" onClick={() => zoomIn()} title="Phóng to">+</button>
+          <button className="nut-zoom" title="Vừa khung — thu phóng cho vừa toàn bộ sơ đồ"
+                  onClick={() => fitView({ padding: 0.2, duration: 300 })}>
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"
+                 strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3M13.5 10.5v3h-3" />
+            </svg>
+          </button>
+        </div>
+        <span className="so">{Math.round(mucZoom * 100)}%</span>
       </div>
 
       {moCaiDat && boot && (

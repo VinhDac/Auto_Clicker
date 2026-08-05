@@ -194,20 +194,77 @@ input, textarea { user-select: text; }
 }
 .the.muc-tieu { color: var(--accent); border-color: rgba(255, 166, 87, .35); }
 
-/* Cổng nối: nhỏ khi nghỉ, to hẳn khi rê vào hộp — để không rối mắt mà vẫn dễ trúng */
+/* ---------------- Cổng nối ----------------
+   VÙNG BẤM và CHẤM NHÌN THẤY là hai thứ khác nhau.
+   Trước đây cổng chỉ 9×9px — đúng bằng cái chấm — nên phải rê chuột rất chính xác
+   mới trúng. Giờ phần tử bắt chuột là 24×24 trong suốt, còn cái chấm vẽ bằng
+   ::after. Diện tích bấm gấp ~7 lần mà nhìn vẫn gọn như cũ.
+   Phóng to đối xứng nên TÂM không đổi -> đường nối vẫn cắm đúng chỗ. */
 .react-flow__handle {
+  width: 24px; height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  /* BẮT BUỘC. `.hop` là position:relative và nằm SAU cổng trong DOM, nên với
+     z-index mặc định nó vẽ đè lên cổng. Nửa vùng bấm nằm trong lòng khối bị hộp
+     nuốt mất, chỉ còn nửa thò ra ngoài mép mới bấm được — nên dù có nới rộng
+     bao nhiêu thì cảm giác vẫn là "rê mãi không trúng". */
+  z-index: 10;
+}
+.react-flow__handle::after {
+  content: '';
+  position: absolute; left: 50%; top: 50%;
   width: 9px; height: 9px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
   background: var(--raised);
   border: 1.5px solid var(--muted);
-  transition: transform .12s, background .12s, border-color .12s;
+  transition: width .12s, height .12s, background .12s, border-color .12s;
 }
-.hop:hover ~ .react-flow__handle,
-.react-flow__node:hover .react-flow__handle { transform: scale(1.25); border-color: var(--accent); }
-.react-flow__handle:hover { background: var(--accent); border-color: var(--accent); }
+.react-flow__node:hover .react-flow__handle::after {
+  width: 12px; height: 12px; border-color: var(--accent);
+}
+
+/* Đang kéo dây: MỌI cổng của MỌI khối hiện rõ, khỏi phải đoán thả vào đâu được. */
+.vung-canvas.dang-noi .react-flow__handle::after {
+  width: 13px; height: 13px;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+/* Rê trúng một cổng và nối được -> cổng sáng hẳn lên.
+   Ba dòng dưới lặp lại y hệt nhưng thêm tiền tố `.vung-canvas.dang-noi`: luật "mọi
+   cổng hiện rõ" ở trên có 3 lớp nên ăn đứt luật 2 lớp này, làm cổng trúng đích chỉ
+   to bằng cổng thường. Nâng độ ưu tiên cho bằng thì cái cụ thể mới thắng cái chung. */
+.react-flow__handle.connectingto::after,
+.react-flow__handle.valid::after,
+.react-flow__handle:hover::after,
+.vung-canvas.dang-noi .react-flow__handle.connectingto::after,
+.vung-canvas.dang-noi .react-flow__handle.valid::after,
+.vung-canvas.dang-noi .react-flow__handle:hover::after {
+  width: 16px; height: 16px;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* …VÀ viền cả khối đích sáng lên — tín hiệu "thả ra là dính" nhìn từ xa cũng thấy. */
+.react-flow__node:has(.react-flow__handle.connectingto) .hop,
+.react-flow__node:has(.react-flow__handle.valid) .hop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 18px var(--accent-soft);
+}
+/* Khối đang kéo dây RA thì làm mờ viền, khỏi lẫn với khối đích. */
+.react-flow__node:has(.react-flow__handle.connectingfrom) .hop {
+  border-color: var(--muted);
+}
 
 .react-flow__edge-path { stroke: #5a5a5a; stroke-width: 1.8; }
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:hover .react-flow__edge-path { stroke: var(--accent); stroke-width: 2.2; }
+/* Dây bấm được (double-click để huỷ nối) thì con trỏ phải nói ra điều đó — chứ
+   không ai tự nhiên đi nhấp đúp vào một đường kẻ để thử xem có gì xảy ra không. */
+.react-flow__edge { cursor: pointer; }
 .react-flow__connection-path { stroke: var(--accent); stroke-width: 2; }
 .react-flow__attribution { display: none; }
 
@@ -267,11 +324,15 @@ input, textarea { user-select: text; }
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 4px 12px;
+  /* Cả hàng phóng ×1.1 so với bản đầu: chữ 11.5→12.6, nút ⚙ 24→26, nút zoom
+     20→22, cao 30→33. Giữ đúng một hệ số cho mọi thứ trong hàng, không chỉnh
+     lẻ từng cái — lệch tỉ lệ là nhìn ra ngay. */
+  gap: 13px;
+  padding: 5px 11px;
+  min-height: 33px;
   background: var(--chrome);
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 12.6px;
   color: var(--muted);
 }
 .thanh-trang-thai .day { flex: 1; }
@@ -454,16 +515,58 @@ select.o { cursor: pointer; }
 /* ---------------- Cụm chạy, ghim mép phải ribbon ---------------- */
 .cum-chay {
   display: flex;
-  align-items: center;
+  flex-direction: column;         /* tên Process ở trên, hàng nút ở dưới */
+  justify-content: center;
   gap: 6px;
   margin-left: auto;              /* đẩy sát mép phải */
-  padding: 0 10px 3px 14px;
+  padding: 0 10px 4px 16px;
   border-left: 1px solid var(--border-soft);
-  align-self: center;
+  /* Chốt bề rộng cụm: để nội dung tự quyết thì ô tên và hàng dưới ra hai bề rộng
+     khác nhau -> mép phải lởm chởm. Chốt lại rồi cho cả hai kéo hết bề rộng đó. */
+  width: 232px;
 }
+/* Chờ dạt trái, Chạy dạt phải -> hai mép thẳng hàng với ô tên phía trên. */
+.hang-chay { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.o-ten-process {
+  width: 100%;
+  padding: 5px 8px;
+  font: 12.5px var(--font);
+}
+.o-ten-process::placeholder { color: var(--dim); }
 .nhan-cho {
   display: flex; align-items: center; gap: 4px;
   color: var(--muted); font-size: 12px; white-space: nowrap;
 }
 .o.so.nho { width: 44px; padding: 4px 6px; text-align: center; }
 .nut-icon { padding: 5px 9px; font-size: 14px; line-height: 1; }
+
+/* ---------------- 3 nút thu phóng ở thanh trạng thái ---------------- */
+.cum-zoom { display: flex; align-items: center; gap: 2px; }
+.nut-zoom {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 20px;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--muted); font: 14.3px/1 var(--font); cursor: pointer; padding: 0;
+}
+.nut-zoom:hover { background: var(--raised); border-color: var(--border); color: var(--text); }
+.nut-zoom:active { background: var(--raised-hover); }
+
+/* Nút biểu tượng trên thanh trạng thái (⚙) */
+.nut-tt {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 24px;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--muted); cursor: pointer; padding: 0; flex: 0 0 auto;
+}
+.nut-tt:hover { background: var(--raised); border-color: var(--border); color: var(--text); }
+.nut-tt:active { background: var(--raised-hover); }
+
+/* Nút Dừng: cùng chỗ với ▶ Chạy nên phải KHÁC HẲN màu, không thì bấm nhầm */
+.nut-dung { background: var(--err); border-color: var(--err); color: #fff; font-weight: 600; }
+.nut-dung:hover:not(:disabled) { filter: brightness(1.1); background: var(--err); }
+
+/* Icon nét trong nút / dòng: canh giữa theo chữ, ăn màu chỗ đặt (currentColor) */
+.icon { vertical-align: -2px; flex: 0 0 auto; }
+.nut .icon { margin-right: 3px; }
+.hop .dong .icon { color: var(--dim); }
+.hop .dong.muc-tieu .icon { color: var(--accent); }

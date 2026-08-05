@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { Card, StepKind } from '../types'
+import IconNet, { ICON_HANH_DONG } from './Icon'
 
 /** Số dòng hành động hiện tối đa trên một hộp.
  *
@@ -26,7 +27,7 @@ const TEN_LOAI: Record<StepKind, string> = {
  * Emoji hiện thành ô vuông ở nhiều chỗ trong bản tkinter (🔁 và ⚡ trong Listbox) vì
  * phụ thuộc font hệ thống. Vẽ hình thì không bao giờ dính chuyện đó nữa.
  */
-function Icon({ kind }: { kind: StepKind }) {
+function IconLoaiKhoi({ kind }: { kind: StepKind }) {
   const c = MAU[kind]
   if (kind === 'loop') {
     return (
@@ -92,7 +93,7 @@ export default function StepNode({ data, selected }: NodeProps) {
         </div>
         <div className="dau">
           <span className="dai-mau" style={{ background: MAU[card.kind] }} />
-          <Icon kind={card.kind} />
+          <IconLoaiKhoi kind={card.kind} />
           <span className="ten" title={card.title}>{card.title}</span>
           <span className="loai">{TEN_LOAI[card.kind]}</span>
         </div>
@@ -104,6 +105,7 @@ export default function StepNode({ data, selected }: NodeProps) {
                  className={'dong' + (d.prologue ? ' mo-dau' : '') + (d.goal ? ' muc-tieu' : '')}
                  title={d.text}>
               <span className="danh">{d.prologue ? '1×' : card.kind === 'loop' ? '↻' : ''}</span>
+              <IconNet name={ICON_HANH_DONG[d.type ?? ''] ?? ''} size={12} />
               <span>{d.text}</span>
             </div>
           ))}

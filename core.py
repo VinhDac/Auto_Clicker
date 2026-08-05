@@ -1049,13 +1049,15 @@ def validate_process(steps, has_clip=None, screen=None, edges=None):
 # ---------------- Hành động ----------------
 ACTION_TYPES = ["left_click", "right_click", "mod_click", "key_press", "move_wasd",
                 "delay", "check_mod", "abyss"]
+# Nhãn thuần chữ, KHÔNG emoji: chúng hiện ở dropdown "Loại:" của hộp thoại hành
+# động, và giao diện tự vẽ icon nét theo `type` cho khớp phần còn lại.
 ACTION_LABELS = {
     "left_click": "Trái-click", "right_click": "Phải-click",
     "mod_click": "Giữ phím + click",
     "key_press": "Nhấn phím", "delay": "Delay",
-    "move_wasd": "🎮 Di chuyển (WASD)",
-    "check_mod": "🔍 Kiểm tra mod",
-    "abyss": "🌀 Abyss — chọn mod",
+    "move_wasd": "Di chuyển (WASD)",
+    "check_mod": "Kiểm tra mod",
+    "abyss": "Abyss — chọn mod",
 }
 
 # ---- Di chuyển WASD ----
@@ -1288,18 +1290,21 @@ def action_display(a):
 
 
 def action_summary(a):
+    # KHÔNG gắn emoji vào chuỗi này: nó là MÔ TẢ, không phải biểu tượng. Giao diện
+    # nhận thêm `type` rồi tự vẽ icon nét cho khớp phần còn lại — emoji tô màu mang
+    # màu riêng, không theo currentColor, và hình dáng phụ thuộc font từng máy.
     t = a["type"]
     if t == "check_mod":
         n = len(a.get("conditions") or [])
         pt = a.get("point")
         loc = f"@ ({pt[0]}, {pt[1]})" if pt else "(chưa chọn điểm)"
-        return f"🔍 Kiểm tra mod {loc}  ·  {n} điều kiện — khớp thì DỪNG Loop"
+        return f"Kiểm tra mod {loc}  ·  {n} điều kiện — khớp thì DỪNG Loop"
     if t == "abyss":
         n = len(a.get("conditions") or [])
         fr = a.get("frame")
         loc = (f"khung @ ({fr[0]}, {fr[1]}) {fr[2]}×{fr[3]}" if fr else "(chưa căn khung)")
         rr = int(a.get("rerolls", ABYSS_DEFAULT_REROLLS))
-        return (f"🌀 Abyss {loc}  ·  {n} điều kiện  ·  reroll {rr}× "
+        return (f"Abyss {loc}  ·  {n} điều kiện  ·  reroll {rr}× "
                 f"— khớp thì chốt mod & DỪNG Loop")
     if t == "mod_click":
         keys = "+".join(parse_hold_keys(a.get("keys"))) or "(chưa chọn phím)"
@@ -1314,7 +1319,7 @@ def action_summary(a):
             return (f"{ACTION_LABELS[t]} — lấy từ {n} ô đã tick, hết ô này tự sang ô sau")
         return f"{ACTION_LABELS[t]} @ ({a['point'][0]}, {a['point'][1]})"
     if t == "move_wasd":
-        return f"🎮 Di chuyển {wasd_display(a.get('keys'))} trong {a.get('ms', MOVE_DEFAULT_MS)}ms"
+        return f"Di chuyển {wasd_display(a.get('keys'))} trong {a.get('ms', MOVE_DEFAULT_MS)}ms"
     if t == "key_press":
         return f"Nhấn phím: {a.get('key', '')}"
     if t == "delay":

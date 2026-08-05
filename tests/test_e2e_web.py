@@ -111,8 +111,12 @@ def main():
         # (không còn dải đầu trang), hàng nút ở y≈75, canvas từ y≈145.
         # Đổi bố cục thì phải sửa mấy số này — chúng bám vào giao diện.
         for ten, viec in [
+            # Thêm khối xong app MỞ LUÔN hộp thoại của khối đó -> phải Esc rồi mới
+            # thêm tiếp, đúng như người dùng thật làm.
             ("thêm khối (bấm Loop)",   lambda: pyautogui.click(X + 75, Y + 75)),
+            ("đóng hộp thoại vừa mở",  lambda: pyautogui.press("escape")),
             ("thêm khối lần 2",        lambda: pyautogui.click(X + 75, Y + 75)),
+            ("đóng hộp thoại lần 2",   lambda: pyautogui.press("escape")),
             ("kéo khối trên canvas",   lambda: (pyautogui.moveTo(X + 300, Y + 380),
                                                 pyautogui.dragTo(X + 560, Y + 470, duration=0.5))),
             ("mở hộp thoại (double-click)", lambda: pyautogui.doubleClick(X + 560, Y + 470)),

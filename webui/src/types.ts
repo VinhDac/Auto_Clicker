@@ -25,6 +25,8 @@ export interface ProcEdge {
 /** Nội dung vẽ lên hộp — do `api.describe()` sinh, không phải JS tự ghép. */
 export interface CardLine {
   text: string
+  /** Loại hành động — giao diện dùng để CHỌN ICON. Python không gắn emoji vào text nữa. */
+  type?: string | null
   /** Nằm TRƯỚC dấu "Loop từ đây" -> chạy đúng 1 lần lúc đầu. */
   prologue: boolean
   /** check_mod / abyss — thứ có thể kết thúc Loop. */

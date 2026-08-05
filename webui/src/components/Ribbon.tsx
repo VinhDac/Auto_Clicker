@@ -90,7 +90,6 @@ export interface RibbonProps {
   themHanhDong: () => void
   sua: () => void
   datBatDau: () => void
-  doiTen: () => void
   nhanBan: () => void
   xoa: () => void
   hoanTac: () => void
@@ -99,12 +98,13 @@ export interface RibbonProps {
   mucMo: MucMenu[]
   xemDiem: () => void
   // cụm chạy ghim mép phải ribbon (trước đây là cả một dải ngang riêng)
+  ten: string
+  datTen: (v: string) => void
   startDelay: number
   datStartDelay: (v: number) => void
   chay: () => void
   dung: () => void
   dangChay: boolean
-  moCaiDat: () => void
   coChon: boolean
   coTheHoanTac: boolean
   coTheLamLai: boolean
@@ -122,7 +122,6 @@ export default function Ribbon(p: RibbonProps) {
       <Nhom ten="Sửa">
         <Nut ten="Sửa" icon={I.edit} onClick={p.sua} tat={!p.coChon}
              title="Mở hộp thoại sửa khối đang chọn (hoặc double-click vào khối)" />
-        <Nut ten="Đổi tên" icon={I.rename} onClick={p.doiTen} tat={!p.coChon} title="Đổi tên khối đang chọn (F2)" />
         <Nut ten="Nhân bản" icon={I.copy} onClick={p.nhanBan} tat={!p.coChon} title="Nhân bản khối đang chọn (Ctrl+D)" />
         <Nut ten="Xoá" icon={I.del} onClick={p.xoa} tat={!p.coChon} title="Xoá khối đang chọn (Delete)" />
       </Nhom>
@@ -146,16 +145,26 @@ export default function Ribbon(p: RibbonProps) {
 
       {/* Cụm chạy — ghim mép phải. Trước đây chiếm cả một dải ngang 46px riêng,
           trong khi bên phải ribbon bỏ trống 254px. */}
+      {/* Hai tầng: tên Process ở trên, hàng nút hạ xuống dưới cho ngang hàng với
+          nhãn nhóm. Xếp chồng nên KHÔNG tốn thêm bề ngang — ribbon vốn đã vừa khít. */}
       <div className="cum-chay">
-        <label className="nhan-cho" title="Chờ bao nhiêu giây trước khi bắt đầu, để kịp chuyển sang cửa sổ game">
-          Chờ
-          <input className="o so nho" value={p.startDelay}
-                 onChange={e => p.datStartDelay(Math.max(0, parseInt(e.target.value) || 0))} />
-          s
-        </label>
-        <button className="nut" onClick={p.dung} disabled={!p.dangChay}>■ Dừng</button>
-        <button className="nut chinh" onClick={p.chay} disabled={p.dangChay}>▶ Chạy</button>
-        <button className="nut nut-icon" onClick={p.moCaiDat} title="Cài đặt">⚙</button>
+        <input className="o o-ten-process" value={p.ten} spellCheck={false}
+               placeholder="Tên Process" title="Tên Process — cũng hiện trên thanh tiêu đề"
+               onChange={e => p.datTen(e.target.value)} />
+        <div className="hang-chay">
+          <label className="nhan-cho" title="Chờ bao nhiêu giây trước khi bắt đầu, để kịp chuyển sang cửa sổ game">
+            Chờ
+            <input className="o so nho" value={p.startDelay}
+                   onChange={e => p.datStartDelay(Math.max(0, parseInt(e.target.value) || 0))} />
+            s
+          </label>
+          {/* MỘT nút đổi vai theo trạng thái, không phải hai nút cạnh nhau.
+              Bỏ hẳn nút Dừng thì lỡ F6 đăng ký hỏng là không còn cách nào dừng —
+              `_dat_hotkey` nuốt lỗi im lặng, nên chuyện đó không báo ra ngoài. */}
+          {p.dangChay
+            ? <button className="nut nut-dung" onClick={p.dung}>■ Dừng</button>
+            : <button className="nut chinh" onClick={p.chay}>▶ Chạy</button>}
+        </div>
       </div>
     </div>
   )

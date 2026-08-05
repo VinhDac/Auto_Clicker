@@ -85,7 +85,9 @@ def _the_buoc(step):
         if giu:
             nhan.append("⇧ giữ " + "+".join(giu))
         dong = [{"text": core.action_display(a),
-                 # "prologue" = chạy 1 lần lúc đầu, nằm TRƯỚC dấu 🔁 Loop từ đây.
+                 # `type` để giao diện chọn ICON. Python nói ĐÓ LÀ GÌ, web quyết VẼ GÌ.
+                 "type": a.get("type"),
+                 # "prologue" = chạy 1 lần lúc đầu, nằm TRƯỚC dấu "Loop từ đây".
                  # Hộp phải cho thấy điều này, nếu không nhìn hộp không biết Loop
                  # thật sự lặp lại những gì.
                  "prologue": i < bat_dau,
@@ -93,11 +95,12 @@ def _the_buoc(step):
                 for i, a in enumerate(hd)]
     elif kind == "group":
         nhan = ["chạy 1 lần"]
-        dong = [{"text": core.action_display(a), "prologue": False,
+        dong = [{"text": core.action_display(a), "type": a.get("type"), "prologue": False,
                  "goal": a.get("type") in core.GOAL_TYPES} for a in hd]
     else:
         nhan = ["chạy 1 lần"]
-        dong = [{"text": core.action_display(step), "prologue": False,
+        dong = [{"text": core.action_display(step), "type": step.get("type"),
+                 "prologue": False,
                  "goal": step.get("type") in core.GOAL_TYPES}]
 
     return {
@@ -389,7 +392,9 @@ class Api:
     @_bat_loi
     def describe_actions(self, actions):
         """Dòng mô tả cho danh sách hành động bên trong 1 Loop/Nhóm."""
-        return {"ok": True, "value": [core.action_display(a) for a in (actions or [])]}
+        return {"ok": True,
+                "value": [{"text": core.action_display(a), "type": a.get("type")}
+                          for a in (actions or [])]}
 
     @_bat_loi
     def describe_conditions(self, conds, kind="check_mod"):
@@ -437,6 +442,29 @@ class Api:
         else:
             return {"ok": False, "error": f'Không có loại khối "{kind}"'}
         return {"ok": True, "value": {"step": st, "card": _the_buoc(st)}}
+
+    @_bat_loi
+    def clone_steps(self, steps):
+        """Nhân bản một nhóm bước: bản sao SÂU, id MỚI, kèm bảng tra id cũ→mới.
+
+        Cấp id ở đây chứ không để JS tự nặn chuỗi: định dạng id là kiến thức của
+        `core.new_step_id()`. Trước đây `nhanBan` bên JS tự sinh `'c'+random` — chạy
+        được, nhưng là hai nơi cùng quyết một thứ.
+
+        Bảng `map` để bên gọi nối lại các ĐƯỜNG NỐI giữa những bước vừa chép: chép 3
+        khối đang nối nhau mà mất đường nối thì coi như chép hụt.
+        """
+        import copy as _copy
+        ra, bang = [], {}
+        for st in (steps or []):
+            moi = _copy.deepcopy(st)
+            cu = moi.get("id")
+            moi["id"] = core.new_step_id()
+            if cu:
+                bang[cu] = moi["id"]
+            ra.append(moi)
+        return {"ok": True, "value": {"steps": ra, "map": bang,
+                                      "cards": [_the_buoc(s) for s in ra]}}
 
     @_bat_loi
     def demo_process(self):

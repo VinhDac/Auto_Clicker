@@ -3,6 +3,7 @@ import { py } from '../api'
 import type { Bootstrap, Step } from '../types'
 import Modal from './Modal'
 import ActionDialog from './ActionDialog'
+import Icon, { ICON_HANH_DONG } from './Icon'
 
 /** Hộp thoại sửa 1 Loop / 1 Nhóm HĐ 1 lần — dựng lại bố cục "Sửa Action_Loop" cũ:
  *  hàng cấu hình trên cùng, danh sách hành động bên trái, cột nút bên phải.
@@ -27,12 +28,20 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
 }) {
   const laLoop = step.kind === 'loop'
   const [s, setS] = useState<Step>(() => JSON.parse(JSON.stringify(step)))
-  const [dong, setDong] = useState<string[]>([])
+  const [dong, setDong] = useState<{ text: string; type?: string | null }[]>([])
   /** Chọn NHIỀU: Ctrl+click thêm/bớt, Shift+click chọn cả dải. */
   const [chonDs, setChonDs] = useState<number[]>([])
   const [keo, setKeo] = useState<number | null>(null)
   const chon = chonDs.length ? chonDs[chonDs.length - 1] : -1
   const [suaHD, setSuaHD] = useState<{ i: number; a: Record<string, any> } | null>(null)
+  /** Ngăn hoàn tác RIÊNG của hộp thoại này, không dính gì tới Ctrl+Z ngoài canvas.
+   *
+   *  Hai cái phải tách nhau: Ctrl+Z ngoài canvas hoàn tác việc thêm/xoá/nối KHỐI,
+   *  còn trong đây là thêm/xoá/xếp lại HÀNH ĐỘNG. Trộn chung thì bấm Ctrl+Z trong
+   *  hộp thoại lại làm biến mất một khối phía sau — đúng kiểu lỗi đã gặp với phím
+   *  Delete. Ngoài canvas cũng đã tự im khi có `.lop-phu`, nên không ai giẫm ai. */
+  const [lui, setLui] = useState<Step[]>([])
+  const [toi, setToi] = useState<Step[]>([])
 
   const hd: Record<string, any>[] = (s.actions as Record<string, any>[]) ?? []
   const batDau = Math.max(0, Math.min(Number(s.loop_start_index ?? 0), hd.length))
@@ -43,7 +52,31 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
   useEffect(() => { lamMoi() }, [lamMoi])
 
   const dat = (k: string, v: unknown) => setS(x => ({ ...x, [k]: v }))
-  const datHD = (x: Record<string, any>[]) => setS(o => ({ ...o, actions: x }))
+
+  /** Chụp trạng thái TRƯỚC khi đổi. Giới hạn 50 bước cho khỏi phình bộ nhớ. */
+  const chup = () => {
+    setLui(l => [...l.slice(-49), JSON.parse(JSON.stringify(s))])
+    setToi([])                                   // làm việc mới thì nhánh "làm lại" cũ hết nghĩa
+  }
+  /** Mọi thay đổi danh sách hành động đều đi qua đây — thêm, sửa, xoá, dán, đổi tên,
+   *  kéo-thả, lên/xuống. Đặt chụp ảnh ở ĐÚNG MỘT CHỖ này thì không thể sót thao tác
+   *  nào, cũng không phải nhớ rắc `chup()` ở bảy hàm khác nhau. */
+  const datHD = (x: Record<string, any>[]) => { chup(); setS(o => ({ ...o, actions: x })) }
+
+  const hoanTac = () => {
+    if (!lui.length) return
+    setToi(t => [...t, JSON.parse(JSON.stringify(s))])
+    setS(lui[lui.length - 1])
+    setLui(l => l.slice(0, -1))
+    setChonDs([])                                // chỉ số cũ có thể trỏ vào hành động không còn nữa
+  }
+  const lamLai = () => {
+    if (!toi.length) return
+    setLui(l => [...l, JSON.parse(JSON.stringify(s))])
+    setS(toi[toi.length - 1])
+    setToi(t => t.slice(0, -1))
+    setChonDs([])
+  }
 
   const giuPhim = String(s.hold_keys ?? '')
 
@@ -132,9 +165,15 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
     const f = (e: KeyboardEvent) => {
       if (suaHD) return
       const o = e.target as HTMLElement
+      // Đang gõ trong ô nhập thì nhường Ctrl+Z cho trình duyệt: nó hoàn tác từng
+      // đoạn chữ vừa gõ, đúng thứ người dùng mong đợi. Nếu cướp lấy, gõ sai một
+      // chữ trong "Tên Loop" mà bấm Ctrl+Z lại hoàn tác nhầm việc xoá hành động.
       if (o && (o.tagName === 'INPUT' || o.tagName === 'SELECT')) return
       const ctrl = e.ctrlKey || e.metaKey
-      if (e.key === 'Delete') { e.preventDefault(); xoa() }
+      if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); hoanTac() }
+      else if (ctrl && (e.key.toLowerCase() === 'y'
+                        || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); lamLai() }
+      else if (e.key === 'Delete') { e.preventDefault(); xoa() }
       else if (e.key === 'F2') { e.preventDefault(); doiTen(chon) }
       else if (ctrl && e.key.toLowerCase() === 'c') { e.preventDefault(); chep() }
       else if (ctrl && e.key.toLowerCase() === 'v') { e.preventDefault(); dan() }
@@ -164,7 +203,7 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
                      onChange={e => dat('max_loops', e.target.value)} />
               <label className="tick ngang" style={{ marginLeft: 14 }}>
                 <input type="checkbox" checked={!!giuPhim}
-                       onChange={e => dat('hold_keys', e.target.checked ? 'shift' : '')} />
+                       onChange={e => { chup(); dat('hold_keys', e.target.checked ? 'shift' : '') }} />
                 ⇧ Giữ Shift suốt Loop
               </label>
             </>
@@ -172,7 +211,7 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
         </div>
 
         <div className="tieu-de-phu">
-          Hành động (double-click sửa • F2 đổi tên • Ctrl+C/Ctrl+V • Del xoá • kéo-thả):
+          Hành động (double-click sửa • F2 đổi tên • Ctrl+C/V • Ctrl+Z hoàn tác • Del xoá • kéo-thả):
         </div>
         <div className="khung-hd">
           <div className="danh-sach cao-10">
@@ -187,21 +226,22 @@ export default function StepDialog({ step, boot, mods, onLuu, onDong }: {
                               + (keo === i ? ' dang-keo' : '')}
                    onClick={e => bam(i, e)} onDoubleClick={() => sua(i)}>
                 <span className="danh-hd">{laLoop ? (i < batDau ? '1×' : '↻') : ''}</span>
-                {x}{laLoop && i < batDau ? '   (1 lần)' : ''}
+                <Icon name={ICON_HANH_DONG[x.type ?? ''] ?? ''} size={12} />
+                {' '}{x.text}{laLoop && i < batDau ? '   (1 lần)' : ''}
               </div>
             ))}
             {dong.length === 0 && <div className="muc mo">chưa có hành động nào</div>}
           </div>
           <div className="cot-nut">
-            <button className="nut" onClick={them}>+ Thêm</button>
-            <button className="nut" disabled={chon < 0} onClick={() => sua(chon)}>✏ Sửa</button>
-            <button className="nut" disabled={chon < 0} onClick={() => doiTen(chon)}>🏷 Đổi tên</button>
-            <button className="nut" disabled={!chonDs.length} onClick={xoa}>🗑 Xoá</button>
-            <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, -1)}>⬆ Lên</button>
-            <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, 1)}>⬇ Xuống</button>
+            <button className="nut" onClick={them}><Icon name="plus" /> Thêm</button>
+            <button className="nut" disabled={chon < 0} onClick={() => sua(chon)}><Icon name="edit" /> Sửa</button>
+            <button className="nut" disabled={chon < 0} onClick={() => doiTen(chon)}>Đổi tên</button>
+            <button className="nut" disabled={!chonDs.length} onClick={xoa}><Icon name="trash" /> Xoá</button>
+            <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, -1)}><Icon name="up" /> Lên</button>
+            <button className="nut" disabled={chon < 0} onClick={() => chuyen(chon, 1)}><Icon name="down" /> Xuống</button>
             {laLoop && (
               <button className="nut" disabled={chon < 0} style={{ marginTop: 10 }}
-                      onClick={() => dat('loop_start_index', chon)}>🔁 Loop từ đây</button>
+                      onClick={() => { chup(); dat('loop_start_index', chon) }}><Icon name="loop" /> Loop từ đây</button>
             )}
           </div>
         </div>

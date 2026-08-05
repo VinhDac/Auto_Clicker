@@ -25,6 +25,8 @@ AN_TOAN = [
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
     ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
+    ("test_cong_noi_web.py", "Cổng nối trên canvas: bấm có trúng, nối xong có báo (~8s)"),
+    ("test_hoan_tac_hop_thoai.py", "Ctrl+Z trong hộp thoại sửa Loop / Nhóm (~14s)"),
 ]
 
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.

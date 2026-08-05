@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { py } from '../api'
 import Modal from './Modal'
+import Icon from './Icon'
 
 const TEN_LOAI: Record<string, string> = {
   process: 'Process', loop: 'Action_Loop', group: 'Nhóm HĐ 1 lần',
@@ -44,8 +45,8 @@ export default function TemplatePicker({ kind, tieuDe, choPhepXoa = true, onChon
   return (
     <Modal title={tieuDe} width={460} onClose={onDong}
            footer={<>
-             {choPhepXoa && <button className="nut" disabled={!chon} onClick={xoa}>🗑 Xoá</button>}
-             {onDuyetFile && <button className="nut" onClick={onDuyetFile}>📂 Duyệt file khác…</button>}
+             {choPhepXoa && <button className="nut" disabled={!chon} onClick={xoa}><Icon name="trash" /> Xoá</button>}
+             {onDuyetFile && <button className="nut" onClick={onDuyetFile}>Duyệt file khác…</button>}
              <span className="day" />
              <button className="nut" onClick={onDong}>Huỷ</button>
              <button className="nut chinh" disabled={!chon}
