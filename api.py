@@ -371,6 +371,7 @@ class Api:
             "point_types": list(core.POINT_TYPES),
             "mod_keys": list(core.MOD_KEYS),
             "hybrid_labels": dict(core.HYBRID_LABELS),
+            "inv_default_per_cell": core.INV_DEFAULT_PER_CELL,
             "games": dict(core.GAMES),
             "accent_presets": {
                 "Cam": "#ffa657", "Xanh dương": "#4a9eff", "Lục": "#3fb950",

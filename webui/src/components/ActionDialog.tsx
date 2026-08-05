@@ -150,7 +150,8 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
 
   async function canLuoi() {
     const r = await py.pick_inv_grid(d.grid?.frame ?? null, d.grid?.cells ?? null)
-    if (r.ok && r.value) dat('grid', { frame: r.value.frame, cells: r.value.cells })
+    // Giữ nguyên per_cell: căn lại lưới KHÔNG được xoá số lượng người dùng đã khai.
+    if (r.ok && r.value) dat('grid', { ...(d.grid ?? {}), frame: r.value.frame, cells: r.value.cells })
   }
 
   function themDieuKien() {
@@ -251,6 +252,11 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
 
   if (laDiem) {
     const luoiBat = !!d.grid
+    const soO = d.grid?.cells?.length ?? 0
+    const moiO = Number(d.grid?.per_cell)
+    const tongLuot = (soO && Number.isFinite(moiO) && moiO > 0)
+      ? `= ${soO} ô × ${moiO} = ${soO * moiO} lần bấm, hết thì DỪNG`
+      : 'khai đúng số item đang có trong mỗi ô'
     than = (
       <>
         <O nhan="X:">
@@ -268,7 +274,8 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
             <hr className="vach" />
             <label className="tick">
               <input type="checkbox" checked={luoiBat}
-                     onChange={e => dat('grid', e.target.checked ? { frame: null, cells: [] } : undefined)} />
+                     onChange={e => dat('grid', e.target.checked
+                       ? { frame: null, cells: [], per_cell: boot.inv_default_per_cell } : undefined)} />
               Nâng cao: lấy từ nhiều ô, hết ô này tự sang ô khác
             </label>
             <div className="hang">
@@ -279,10 +286,19 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
                     : `(${d.grid.frame[0]}, ${d.grid.frame[1]}) ${d.grid.frame[2]}×${d.grid.frame[3]}  ·  đã tick ${d.grid.cells?.length ?? 0} ô`}
               </span>
             </div>
+            {luoiBat && (
+              <O nhan="Số item MỖI Ô:">
+                <input className="o so" value={d.grid?.per_cell ?? ''}
+                       onChange={e => dat('grid', { ...(d.grid ?? {}), per_cell: e.target.value })} />
+                <span className="mo">{tongLuot}</span>
+              </O>
+            )}
             <Goi>
-              Tick sẵn những ô CHỨA ĐÚNG loại currency cần dùng.<br />
-              App tự nhìn ô nào còn hàng — không đếm, không nhớ, nên bỏ thêm currency
-              giữa chừng hay chạy lại đều đúng. Hết sạch thì DỪNG.
+              Tick sẵn những ô CHỨA ĐÚNG loại currency cần dùng, rồi khai mỗi ô có
+              bao nhiêu item — nạp đều các ô cho dễ khai.<br />
+              App đếm số lần bấm, hết lượt của ô này thì sang ô sau. Ảnh chỉ dùng để
+              CHẶN: lần chạy đầu ô nào nhìn ra trống là DỪNG NGAY trước khi bấm phát
+              nào, và giữa chừng ô nào cạn sớm hơn khai thì bỏ qua ô đó.
             </Goi>
           </>
         )}

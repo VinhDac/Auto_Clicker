@@ -149,7 +149,7 @@ def chay(b, cap, item_co):
 
     that_doc, that_lam = core.check_mod_action, core.do_action
     core.check_mod_action = doc_gia_lap
-    core.do_action = lambda a, sf, ms: None
+    core.do_action = lambda a, sf, ms=0, dem_luoi=None: None
     try:
         cfg = {"name": "t", "steps": list(b.values()), "edges": noi_day(b, cap),
                "start_delay": 0}

@@ -276,7 +276,7 @@ def _doc_gia(a, sf, hv, k, log=None):
 
 _td, _tl = core.check_mod_action, core.do_action
 core.check_mod_action = _doc_gia
-core.do_action = lambda a, sf, ms: None
+core.do_action = lambda a, sf, ms=0, dem_luoi=None: None
 try:
     _A = api.Api()
     # Nhật ký bị luồng `_bom_nhat_ky` hút khỏi hàng đợi rồi đẩy qua `_ban`, nên phải

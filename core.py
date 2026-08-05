@@ -1559,9 +1559,14 @@ def build_action(d):
                     return None, 'bật "lấy từ nhiều ô" thì phải căn lưới trước'
                 if not g.get("cells"):
                     return None, "chưa tick ô nào trong lưới"
+                spc = g.get("per_cell")
+                moi_o = INV_DEFAULT_PER_CELL if spc in (None, "") else int(spc)
+                if not 1 <= moi_o <= INV_MAX_PER_CELL:
+                    return None, (f"số lượng mỗi ô phải từ 1 đến {INV_MAX_PER_CELL}")
                 a = {"type": t, "point": diem(bat_buoc=False) or [0, 0],
                      "grid": {"frame": [int(v) for v in g["frame"]],
-                              "cells": [[int(c[0]), int(c[1])] for c in g["cells"]]}}
+                              "cells": [[int(c[0]), int(c[1])] for c in g["cells"]],
+                              "per_cell": moi_o}}
             else:
                 a = {"type": t, "point": diem()}
 
@@ -1646,7 +1651,9 @@ def action_summary(a):
         grid = a.get("grid")
         if grid:
             n = len(grid.get("cells") or [])
-            return (f"{ACTION_LABELS[t]} — lấy từ {n} ô đã tick, hết ô này tự sang ô sau")
+            moi_o = inv_moi_o(grid)
+            return (f"{ACTION_LABELS[t]} — {n} ô × {moi_o} lượt = {n * moi_o} lần bấm, "
+                    f"hết ô này tự sang ô sau")
         return f"{ACTION_LABELS[t]} @ ({a['point'][0]}, {a['point'][1]})"
     if t == "move_wasd":
         return f"Di chuyển {wasd_display(a.get('keys'))} trong {a.get('ms', MOVE_DEFAULT_MS)}ms"
@@ -1683,19 +1690,45 @@ def _point_of(a):
     return int(pt[0]), int(pt[1])
 
 
-def do_action(a, stop_flag, pre_click_ms=0):
+def do_action(a, stop_flag, pre_click_ms=0, dem_luoi=None):
     t = a["type"]
     if t in POINT_TYPES:
         grid = a.get("grid")
         if grid:
-            # Nâng cao: lấy từ nhiều ô — nhìn xem ô nào còn hàng rồi click ô đó,
-            # thay vì bám cứng 1 điểm.
+            # Nâng cao: lấy từ nhiều ô. Số lượng mỗi ô do người dùng KHAI, ảnh chỉ
+            # làm khoá chặn — xem `inv_chon_o` để biết vì sao chia vai như vậy.
             frame, cells = grid.get("frame"), (grid.get("cells") or [])
-            hit = inv_first_filled(frame, cells) if frame and cells else None
-            if hit is None:
+            if not frame or not cells:
                 raise FatalActionError(
-                    f"hết currency ở cả {len(cells)} ô đã tick — dừng để khỏi chạy "
-                    f"không. Bỏ thêm currency vào rồi chạy lại.")
+                    'bật "lấy từ nhiều ô" mà chưa căn lưới hoặc chưa tick ô nào.')
+            moi_o = max(1, inv_moi_o(grid))
+            if dem_luoi is None:
+                dem_luoi = {}
+            khoa = khoa_luoi(frame, cells)
+            if khoa not in dem_luoi:
+                # LẦN ĐẦU lưới này chạy trong phiên: soát cho đủ hàng TRƯỚC khi bấm
+                # phát nào. Cố tình soát ở đây chứ không soát lúc bấm Chạy: lúc đó
+                # game có thể chưa mở túi đồ, soát sẽ báo oan hàng loạt.
+                trong = inv_o_trong(frame, cells)
+                if trong:
+                    raise FatalActionError(
+                        f"ô số {', '.join(str(i) for i in trong)} trong lưới đang "
+                        f"TRỐNG, mà bạn khai mỗi ô có {moi_o}. Thêm currency vào rồi "
+                        f"chạy lại — dừng trước khi bấm phát nào.")
+                dem_luoi[khoa] = {}
+            dem = dem_luoi[khoa]
+            hit = inv_chon_o(frame, cells, moi_o, dem)
+            if hit is None:
+                con_luot = sum(max(0, moi_o - dem.get((int(c[0]), int(c[1])), 0))
+                               for c in cells)
+                if con_luot:
+                    raise FatalActionError(
+                        f"còn {con_luot} lượt đã khai nhưng mọi ô đều nhìn ra TRỐNG "
+                        f"— khai nhiều hơn thực tế. Thêm currency rồi chạy lại.")
+                raise FatalActionError(
+                    f"đã dùng hết {len(cells)} ô × {moi_o} = {len(cells) * moi_o} "
+                    f"lượt đã khai. Thêm currency rồi chạy lại.")
+            dem[hit] = dem.get(hit, 0) + 1
             x, y = inv_cell_point(frame, hit[0], hit[1])
         else:
             x, y = _point_of(a)
@@ -1961,6 +1994,13 @@ INV_ASPECT = 610 / 253          # khung luôn giữ tỉ lệ này khi phóng to
 # ô trống vẫn 2.7-2.8 còn ô có đồ thấp nhất 19.4 — cách nhau 6.9 lần.
 INV_INSET = 0.25
 
+# Số lượng item mỗi ô do NGƯỜI DÙNG KHAI, không đọc bằng ảnh. Đã thử OCR con số
+# stack mà game vẽ ở góc ô: chữ chỉ cao ~10px, nằm đè lên icon lổn nhổn, thử 8 kiểu
+# tiền xử lý (phóng to, autocontrast, nhị phân, nhị phân đảo) đều chỉ đọc đúng 1-2
+# trên 10 ô — "30" ra "3'oÉ". Không dựng được thì thà để người dùng khai.
+INV_DEFAULT_PER_CELL = 20
+INV_MAX_PER_CELL = 9999
+
 # "Độ chi tiết" = độ lệch chuẩn của pixel trong lõi ô.
 #   ô TRỐNG  : 2.7 - 3.8   (hoa văn nền lặp đều tăm tắp, 48/48 ô đo được đều vậy)
 #   ô CÓ ĐỒ  : 19.4 - 80.9 (món tối nhất trong kho vẫn 19.4)
@@ -2021,6 +2061,65 @@ def inv_first_filled(frame, cells):
     return None
 
 
+def inv_o_trong(frame, cells):
+    """Ô nào NHÌN RA TRỐNG. Trả [số thứ tự tick, ...] đếm từ 1."""
+    return [i for i, (_, _, co_hang, _) in enumerate(inv_scan(frame, cells), 1)
+            if not co_hang]
+
+
+def inv_moi_o(grid):
+    """Số item MỖI Ô đã khai.
+
+    Thiếu khoá hoặc để trống -> lấy mặc định (file cũ mở lại vẫn chạy được).
+    KHÔNG viết `grid.get("per_cell") or MẶC_ĐỊNH`: số 0 là giá trị sai mà `or` lại
+    nuốt mất, hoá ra 0 âm thầm thành 20 và phần soát cấu hình hết đường báo lỗi.
+    Giá trị bậy thì trả về 0 để bên soát còn nhìn thấy mà kêu.
+    """
+    spc = (grid or {}).get("per_cell")
+    if spc is None or spc == "":
+        return INV_DEFAULT_PER_CELL
+    try:
+        return int(spc)
+    except (TypeError, ValueError):
+        return 0
+
+
+def khoa_luoi(frame, cells):
+    """Khoá nhận diện một lưới. Hai hành động tick CÙNG bộ ô thì dùng CHUNG kho —
+    đó mới đúng thực tế, vì chúng rút từ cùng những ô currency đó."""
+    return (tuple(int(v) for v in frame),
+            tuple((int(c[0]), int(c[1])) for c in cells))
+
+
+def inv_chon_o(frame, cells, moi_o, dem):
+    """Ô tiếp theo ĐƯỢC PHÉP bấm — hoặc None nếu không còn ô nào.
+
+    HAI KHOÁ, phải cùng đồng ý mới bấm:
+      · bộ đếm — ô này chưa dùng hết `moi_o` lượt đã khai;
+      · ảnh    — ô này nhìn vẫn còn hàng.
+
+    Ảnh chỉ có quyền PHỦ QUYẾT, không có quyền cho đi tiếp. Lý do: phép đo là độ
+    lệch chuẩn, mà mọi thứ vẽ đè lên ô (tooltip của game, icon dính con trỏ, cửa sổ
+    app) đều chỉ làm số đó TĂNG. Đo được: chỉ 4 pixel sáng lạc vào lõi ô là ô trống
+    đã vọt từ 2.9 lên 15.1, quá ngưỡng 10. Nên "hết" là đáng tin còn "còn" thì không
+    — vì vậy chỉ nghe nó khi nó nói HẾT.
+
+    KHÔNG ghi nhớ ô đã bị ảnh phủ quyết: quét lại mỗi lần tuy tốn một lần chụp
+    nhưng đổi lại bỏ thêm currency giữa chừng là dùng được ngay.
+    """
+    for rc in cells:
+        try:
+            r, c = int(rc[0]), int(rc[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if dem.get((r, c), 0) >= moi_o:
+            continue                                  # khoá 1: hết lượt đã khai
+        if cell_detail(grab_screen(inv_cell_patch(frame, r, c))) < INV_ITEM_MIN_DETAIL:
+            continue                                  # khoá 2: ảnh phủ quyết
+        return (r, c)
+    return None
+
+
 def inv_problems(grid, screen=None):
     """Soát cấu hình lưới của 1 hành động. Trả [{"severity", "message"}]."""
     out = []
@@ -2041,8 +2140,18 @@ def inv_problems(grid, screen=None):
         if fw / INV_COLS < 20:
             add("warning", f"\"Lấy từ nhiều ô\": lưới hơi nhỏ ({fw}×{fh}) — ô chỉ "
                            f"{fw / INV_COLS:.0f}px, dò còn/hết dễ sai. Căn lại cho trùm đúng.")
-    if not ((grid or {}).get("cells") or []):
+    cells = (grid or {}).get("cells") or []
+    if not cells:
         add("error", "\"Lấy từ nhiều ô\" chưa tick ô nào.")
+    else:
+        moi_o = inv_moi_o(grid)
+        if not 1 <= moi_o <= INV_MAX_PER_CELL:
+            add("error", f"\"Lấy từ nhiều ô\": số lượng mỗi ô phải từ 1 đến "
+                         f"{INV_MAX_PER_CELL}.")
+        elif moi_o * len(cells) < 5:
+            add("warning", f"\"Lấy từ nhiều ô\": tổng cộng chỉ {moi_o * len(cells)} "
+                           f"lần bấm ({len(cells)} ô × {moi_o}) — chạy được một lúc "
+                           f"là dừng. Khai đúng số item đang có trong mỗi ô.")
     if not HAS_SCREEN:
         add("error", "\"Lấy từ nhiều ô\" cần thư viện Pillow để chụp màn hình. "
                      "Cài:  pip install pillow")
@@ -2423,6 +2532,10 @@ class ProcessRunner:
         # hẳn "⛔ DỪNG", nếu không người dùng tưởng app hỏng.
         self.dung_nhanh = None      # `confirm_mod` không khớp -> nhánh dừng giữa chừng
         self.het_nhanh = False      # ở điểm rẽ, không nhánh nào khớp
+        # Đã bấm bao nhiêu lượt vào từng ô kho, {khoá lưới: {(hàng, cột): số lượt}}.
+        # CHỈ sống trong một lần chạy — chạy lại là quên sạch và soát lại từ đầu, nên
+        # không có chuyện bộ đếm cũ đá nhau với kho vừa được nạp thêm.
+        self.dem_luoi = {}
 
     def release_held_keys(self):
         """Thả mọi phím đang giữ. Bên gọi nên gọi lại lần nữa cho chắc."""
@@ -2486,7 +2599,7 @@ class ProcessRunner:
                     return None, payload
             else:
                 try:
-                    do_action(a, self.stop_flag, pre_click_ms)
+                    do_action(a, self.stop_flag, pre_click_ms, dem_luoi=self.dem_luoi)
                 except pyautogui.FailSafeException:
                     self.stop_flag.set()
                     return None, None
