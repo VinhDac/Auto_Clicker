@@ -95,7 +95,7 @@ kiem("file cũ -> được cấp id", all(s.get("id") for s in lai_cu["steps"]))
 # ============================================================ §4 api.py
 print("§4 — api.py: mọi hàm trả dict, không ném exception")
 bt = A.bootstrap()
-kiem("bootstrap ok", bt["ok"] and len(bt["value"]["action_types"]) == 8)
+kiem("bootstrap ok", bt["ok"] and len(bt["value"]["action_types"]) == 9)
 kiem("ping", A.ping()["value"] == "pong")
 
 for kind in ("loop", "group", "action"):

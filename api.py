@@ -55,7 +55,7 @@ def _hanh_dong_mac_dinh(loai):
         return {"type": loai, "point": giua}
     if loai == "mod_click":
         return {"type": loai, "point": giua, "keys": "shift", "button": "left"}
-    if loai == "check_mod":
+    if loai in ("check_mod", core.CONFIRM_MOD):
         return {"type": loai, "point": giua, "conditions": []}
     if loai == "abyss":
         return {"type": loai, "conditions": [], "excludes": []}

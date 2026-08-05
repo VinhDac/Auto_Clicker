@@ -544,20 +544,80 @@ def step_display(step):
 MAX_PROCESS_STEPS = 10000
 
 
-def flow_map(steps, edges):
-    """(bảng_tra_id, bước_kế_tiếp) — nền tảng dùng chung cho cả chạy lẫn đánh số.
+# Hành động RẼ NHÁNH. Khác `check_mod` một trời một vực dù cùng đọc chữ item:
+#   check_mod   khớp  -> DỪNG Loop  (đạt mục tiêu)
+#   confirm_mod KHÔNG khớp -> DỪNG NHÁNH đang chạy (item không thuộc đường này)
+CONFIRM_MOD = "confirm_mod"
 
-    `bước_kế_tiếp[id] = id` theo cổng "out". Cổng khác dành cho rẽ nhánh sau này.
-    """
+
+def _khoa_nhanh(step):
+    """Khoá sắp thứ tự ưu tiên nhánh: TRÊN xuống DƯỚI, rồi TRÁI sang PHẢI.
+
+    Vì sao lấy vị trí trên canvas chứ không phải thứ tự tạo dây: thứ tự tạo dây là
+    thứ VÔ HÌNH — kéo khối cách mấy cũng không đổi, nên người dùng không có cách nào
+    biết nhánh nào được thử trước. Vị trí thì nhìn thấy, và nhãn A/B trên huy hiệu
+    đổi ngay lúc thả chuột, nên ưu tiên không bao giờ là thứ ngầm.
+    Cuối cùng chốt bằng `id` để hai khối chồng khít nhau vẫn ra thứ tự cố định."""
+    pos = step.get("pos") or []
+    try:
+        x, y = float(pos[0]), float(pos[1])
+    except (TypeError, ValueError, IndexError):
+        x = y = 0.0
+    return (y, x, str(step.get("id") or ""))
+
+
+def flow_map(steps, edges):
+    """(bảng_tra_id, kế_tiếp) với `kế_tiếp[id] = [id, ...]` THEO ĐÚNG THỨ TỰ ƯU TIÊN.
+
+    ĐÂY LÀ NGUỒN SỰ THẬT DUY NHẤT VỀ THỨ TỰ NHÁNH.
+
+    Trước khi có rẽ nhánh, lời hứa "số ở góc khối không nói dối" được giữ bằng cách
+    cho bộ chạy và bộ đánh số đi CHUNG một phép duyệt. Có nhánh rồi thì không còn
+    đúng nữa: huy hiệu vẽ CẢ CÂY (tĩnh) còn bộ chạy chỉ đi MỘT đường (động) —
+    chúng không thể là cùng một phép duyệt.
+
+    Chỗ duy nhất nó còn có thể nói dối là THỨ TỰ ƯU TIÊN NHÁNH: huy hiệu ghi A
+    trước B mà bộ chạy thử B trước thì sai hoàn toàn. Nên đó chính là thứ phải dùng
+    chung — và cả hai bên đều chỉ lấy thứ tự từ đúng hàm này."""
     theo_id = {s.get("id"): s for s in (steps or []) if isinstance(s, dict) and s.get("id")}
     ke = {}
     for e in (edges or []):
         if (e.get("port") or "out") != "out":
             continue
         a, b = e.get("from"), e.get("to")
-        if a in theo_id and b in theo_id and a not in ke:
-            ke[a] = b        # 2 đường ra cùng cổng là cấu hình sai; validate sẽ báo
+        if a in theo_id and b in theo_id:
+            ds = ke.setdefault(a, [])
+            if b not in ds:          # nối hai lần cùng một cặp thì vẫn chỉ là một nhánh
+                ds.append(b)
+    for ds in ke.values():
+        ds.sort(key=lambda sid: _khoa_nhanh(theo_id[sid]))
     return theo_id, ke
+
+
+def is_branch_gate(step):
+    """Khối này có phải CỔNG của một nhánh không.
+
+    Cổng = khối "HĐ lẻ" mang đúng một hành động `confirm_mod`.
+
+    Cố ý KHÔNG cho Nhóm hay Loop làm cổng. Ở điểm rẽ các nhánh được thử lần lượt,
+    nên nhánh trượt phải LÙI LẠI ĐƯỢC — mà lùi chỉ an toàn khi nhánh đó chưa kịp
+    làm gì trong game. Một khối HĐ lẻ `confirm_mod` chỉ đọc chữ item nên lùi bao
+    nhiêu lần cũng vô hại; một Nhóm thì không hứa được điều đó (nó có thể click vài
+    phát rồi mới kiểm tra, và cú click ấy không rút lại được).
+
+    `confirm_mod` nằm giữa một Nhóm vẫn dùng bình thường — nó chỉ không đóng vai
+    cổng, mà đóng vai chốt chặn "không khớp thì bỏ nốt nhóm này"."""
+    return (isinstance(step, dict) and not is_loop_step(step)
+            and not is_group_step(step) and step.get("type") == CONFIRM_MOD)
+
+
+def _khoa_dieu_kien(conds):
+    """Dấu vân tay của một bộ điều kiện, để phát hiện hai cổng giống hệt nhau.
+
+    Sắp khoá trước khi ghép: hai dict cùng nội dung mà khác thứ tự khoá vẫn phải ra
+    cùng một chuỗi, nếu không cảnh báo "hai nhánh trùng điều kiện" sẽ bỏ sót."""
+    return json.dumps([sorted((str(k), str(v)) for k, v in (c or {}).items())
+                       for c in (conds or [])], ensure_ascii=False)
 
 
 def flow_entry(steps, edges):
@@ -578,28 +638,129 @@ def flow_entry(steps, edges):
     return None
 
 
+def _chu_nhanh(k):
+    """0 -> 'A', 1 -> 'B'. Quá 26 nhánh từ một khối là chuyện không xảy ra thật
+    (phải có 26 mod khác nhau), nhưng vẫn phải ra chuỗi phân biệt được."""
+    return chr(65 + k) if k < 26 else f"({k + 1})"
+
+
+def diem_gop(cur, ke):
+    """Khối đầu tiên mà MỌI nhánh của `cur` đều dẫn tới, hoặc None.
+
+    Nhờ nó mà số quay về mức trên cùng sau khi hết nhánh: 4 rẽ ra 4A/4B, hai nhánh
+    chụm lại thì khối sau đó là "5" chứ không phải "4A.4". Không nhánh nào gặp nhau
+    -> None, nghĩa là mỗi nhánh tự kết thúc và đơn giản là KHÔNG CÓ số 5 nào cả."""
+    nhanh = ke.get(cur) or []
+    if len(nhanh) < 2:
+        return None
+
+    def toi_duoc(bd):
+        tham, hang = set(), [bd]
+        while hang:
+            n = hang.pop(0)
+            if n in tham:
+                continue
+            tham.add(n)
+            hang.extend(ke.get(n) or [])
+        return tham
+
+    chung = None
+    for uv in nhanh:
+        t = toi_duoc(uv)
+        chung = t if chung is None else (chung & t)
+    chung = (chung or set()) - {cur}      # trừ chính nó, tránh vòng tự trỏ về
+    if not chung:
+        return None
+    # Lấy cái GẦN NHẤT: duyệt rộng từ các đầu nhánh, gặp đầu tiên là điểm gộp.
+    tham, hang = set(), list(nhanh)
+    while hang:
+        n = hang.pop(0)
+        if n in tham:
+            continue
+        tham.add(n)
+        if n in chung:
+            return n
+        hang.extend(ke.get(n) or [])
+    return None
+
+
 def flow_order(steps, edges):
-    """Thứ tự chạy THẬT -> {id: số thứ tự bắt đầu từ 1}, + những bước không bao giờ tới.
+    """Nhãn hiện ở góc khối -> {id: "1" | "4" | "4A" | "4A.2" | "4A.2B.1"}.
 
-    Đây chính là con số hiện ở góc khối trên canvas. Cố ý dùng CHUNG một phép duyệt
-    với `ProcessRunner`, để con số không thể nói khác việc app thực sự làm.
+    LUẬT: SỐ = đi được bao xa, CHỮ = đi nhánh nào.
+    Chữ dính ngay sau số của khối RẼ (khối 4 rẽ ra thì cổng hai nhánh là 4A, 4B),
+    dấu chấm ngăn giữa nhãn nhánh và số bước bên trong nhánh (4A.1, 4A.2). Hai thứ
+    so le nhau vì một nhánh luôn chứa một chuỗi, và một chuỗi luôn có thể rẽ tiếp.
 
-    Trả về: {"order": {...}, "unreachable": [id...], "entry": id|None, "loop": bool}
+    Ngữ pháp: các nhóm ngăn bởi dấu chấm, mỗi nhóm = SỐ rồi tới các CHỮ (có thể
+    không có). "4A.2B" tách thành "4A" | "2B" — chữ không bao giờ mở đầu một nhóm,
+    số luôn đứng ngay sau dấu chấm, nên tách được bằng máy, không nhập nhằng.
+
+    Trả về: {"order": {id: nhãn}, "unreachable": [id...], "entry": id|None,
+             "loop": bool}
     """
     theo_id, ke = flow_map(steps, edges)
     bat_dau = flow_entry(steps, edges)
-    thu_tu, cur, i, vong = {}, bat_dau, 1, False
-    while cur and cur in theo_id:
-        if cur in thu_tu:
-            vong = True          # nối ngược lên -> vòng lặp ở tầng Process
-            break
-        thu_tu[cur] = i
-        i += 1
-        cur = ke.get(cur)
-    return {"order": thu_tu,
-            "unreachable": [sid for sid in theo_id if sid not in thu_tu],
+    nhan = {}
+    vong = [False]
+
+    def dat(sid, s):
+        """Gán nhãn; đã có nhãn nghĩa là quay lại chỗ cũ -> đồ thị có vòng."""
+        if sid in nhan:
+            vong[0] = True
+            return False
+        nhan[sid] = s
+        return True
+
+    def chuoi(cur, tien_to, i, dung_tai):
+        """Đánh số một chuỗi; khối đầu mang nhãn f"{tien_to}{i}", rồi +1 dần.
+        Dừng khi tới `dung_tai` (điểm gộp — để dành cho mức trên) hoặc hết đường."""
+        for _ in range(MAX_PROCESS_STEPS):
+            if cur is None or cur not in theo_id or cur == dung_tai:
+                return
+            if not dat(cur, f"{tien_to}{i}"):
+                return
+            if not re_nhanh(cur, f"{tien_to}{i}", dung_tai):
+                nhanh = ke.get(cur) or []
+                cur, i = (nhanh[0] if nhanh else None), i + 1
+                continue
+            gop = diem_gop(cur, ke)
+            if gop is None or gop == dung_tai:
+                return
+            cur, i = gop, i + 1
+
+    def re_nhanh(cur, nhan_cur, dung_tai):
+        """Nếu `cur` là điểm rẽ thì đánh số hết các nhánh của nó. True = có rẽ."""
+        nhanh = ke.get(cur) or []
+        if len(nhanh) < 2:
+            return False
+        gop = diem_gop(cur, ke)
+        for k, uv in enumerate(nhanh):
+            dau_nhanh(uv, nhan_cur + _chu_nhanh(k), gop if gop is not None else dung_tai)
+        return True
+
+    def dau_nhanh(uv, nhan_nhanh, dung_tai):
+        """Khối ĐẦU nhánh mang đúng nhãn nhánh ("4A" — chính là cái cổng), các khối
+        sau nó mang "4A.1", "4A.2"... Cổng lại rẽ tiếp thì chữ nối thêm chữ ("4AA"),
+        vẫn đúng ngữ pháp vì một nhóm cho phép nhiều chữ."""
+        if uv is None or uv not in theo_id or uv == dung_tai:
+            return
+        if not dat(uv, nhan_nhanh):
+            return
+        if re_nhanh(uv, nhan_nhanh, dung_tai):
+            gop = diem_gop(uv, ke)
+            if gop is not None and gop != dung_tai:
+                chuoi(gop, nhan_nhanh + ".", 1, dung_tai)
+            return
+        sau = ke.get(uv) or []
+        if sau:
+            chuoi(sau[0], nhan_nhanh + ".", 1, dung_tai)
+
+    chuoi(bat_dau, "", 1, None)
+    return {"order": nhan,
+            "unreachable": [sid for sid in theo_id if sid not in nhan],
             "entry": bat_dau,
-            "loop": vong}
+            "loop": vong[0]}
 
 
 def validate_flow_graph(steps, edges):
@@ -610,17 +771,52 @@ def validate_flow_graph(steps, edges):
     if not ds:
         return ra
 
-    # 2 đường ra cùng cổng "out" -> chạy tới đó không biết đi đâu
-    dem = {}
-    for e in (edges or []):
-        if (e.get("port") or "out") == "out":
-            dem[e.get("from")] = dem.get(e.get("from"), 0) + 1
-    theo_id = {s["id"]: s for s in ds}
-    for sid, n in dem.items():
-        if n > 1 and sid in theo_id:
+    theo_id, ke = flow_map(steps, edges)
+
+    # ---- Luật rẽ nhánh ----
+    # Nhiều đường ra KHÔNG còn là lỗi, nhưng phải quyết định được đi đường nào. Ở
+    # điểm rẽ các nhánh được thử lần lượt trên->dưới, nên mỗi nhánh phải mở đầu bằng
+    # một CỔNG (khối HĐ lẻ "Xác nhận mod"), trừ tối đa MỘT nhánh mặc định — và nhánh
+    # mặc định luôn khớp nên bắt buộc phải xếp CUỐI, nếu không mấy nhánh sau nó không
+    # bao giờ được thử tới.
+    for sid, nhanh in ke.items():
+        if len(nhanh) < 2 or sid not in theo_id:
+            continue
+        ten = step_title(theo_id[sid])
+        khong_cong = [uv for uv in nhanh if not is_branch_gate(theo_id[uv])]
+        if len(khong_cong) > 1:
+            ds_ten = ", ".join(f'"{step_title(theo_id[uv])}"' for uv in khong_cong)
             ra.append({"severity": "error", "step": sid, "index": None,
-                       "message": f'"{step_title(theo_id[sid])}" có {n} đường nối đi ra — '
-                                  f"không biết chạy tiếp đường nào. Hãy xoá bớt."})
+                       "message": f'"{ten}" rẽ {len(nhanh)} nhánh nhưng có {len(khong_cong)} '
+                                  f"nhánh không có cổng kiểm tra ({ds_ten}) — chạy tới đây "
+                                  f"không biết chọn nhánh nào. Mỗi nhánh phải bắt đầu bằng "
+                                  f'khối HĐ lẻ "{ACTION_LABELS[CONFIRM_MOD]}", nhiều nhất '
+                                  f"một nhánh được để trống làm nhánh mặc định."})
+        elif khong_cong and khong_cong[0] != nhanh[-1]:
+            ra.append({"severity": "error", "step": sid, "index": None,
+                       "message": f'"{step_title(theo_id[khong_cong[0]])}" là nhánh mặc định '
+                                  f'(không có cổng kiểm tra) nhưng không nằm dưới cùng của '
+                                  f'"{ten}" — nhánh mặc định luôn khớp nên các nhánh xếp dưới '
+                                  f"nó không bao giờ chạy tới. Hãy kéo nó xuống thấp nhất."})
+        elif not khong_cong:
+            ra.append({"severity": "warning", "step": sid, "index": None,
+                       "message": f'"{ten}" rẽ {len(nhanh)} nhánh và nhánh nào cũng có điều '
+                                  f"kiện — item không khớp nhánh nào thì Process kết thúc tại "
+                                  f"đây. Muốn luôn có lối đi thì thêm một nhánh không cổng "
+                                  f"xếp dưới cùng."})
+        # Hai cổng cùng điều kiện y hệt: cái dưới không bao giờ tới lượt.
+        da_thay = {}
+        for uv in nhanh:
+            if not is_branch_gate(theo_id[uv]):
+                continue
+            khoa = _khoa_dieu_kien(theo_id[uv].get("conditions"))
+            if khoa in da_thay:
+                ra.append({"severity": "warning", "step": uv, "index": None,
+                           "message": f'"{step_title(theo_id[uv])}" có điều kiện giống hệt '
+                                      f'"{step_title(theo_id[da_thay[khoa]])}" xếp trên — '
+                                      f"khớp thì nhánh trên thắng, nhánh này không bao giờ chạy."})
+            else:
+                da_thay[khoa] = uv
 
     kq = flow_order(steps, edges)
     if kq["entry"] is None:
@@ -926,7 +1122,7 @@ def validate_group(actions, has_clip=None, screen=None):
         problems.append({"severity": "warning", "index": None,
                          "message": "Nhóm chưa có hành động nào — bước này sẽ không làm gì."})
         return problems
-    if not has_clip and any(a.get("type") == "check_mod" for a in actions):
+    if not has_clip and any(a.get("type") in ("check_mod", CONFIRM_MOD) for a in actions):
         problems.append({"severity": "error", "index": None,
                          "message": "Thiếu thư viện pyperclip → không đọc được chữ item. "
                                     "Cài: pip install pyperclip"})
@@ -961,6 +1157,16 @@ def validate_flow(actions, loop_start_index, max_loops, has_clip=None, screen=No
     if loop_start_index >= n:
         err(f"Điểm bắt đầu Loop (#{loop_start_index + 1}) nằm sau hành động cuối "
             f"→ không có gì để lặp. Dùng nút \"🔁 Loop từ đây\" để đặt lại.")
+
+    # `confirm_mod` trong Loop là bẫy: luật của nó là "không khớp -> dừng nhánh",
+    # nên ngay vòng đầu item chưa ra mod là cả Process dừng — trong khi thứ người
+    # dùng muốn gần như chắc chắn là "roll tới khi ra mod" = `check_mod`.
+    for i, a in enumerate(actions):
+        if a.get("type") == CONFIRM_MOD:
+            warn(f"\"{ACTION_LABELS[CONFIRM_MOD]}\" nằm trong Loop: không khớp là DỪNG "
+                 f"ngay từ vòng đầu, Loop sẽ không roll thêm vòng nào. Muốn roll tới khi "
+                 f"ra mod thì dùng \"{ACTION_LABELS['check_mod']}\"; còn để rẽ nhánh thì "
+                 f"đặt nó thành khối HĐ lẻ riêng ngoài canvas.", i)
 
     checks = [i for i, a in enumerate(actions) if a.get("type") == "check_mod"]
     goals = [i for i, a in enumerate(actions) if a.get("type") in GOAL_TYPES]
@@ -1048,7 +1254,7 @@ def validate_process(steps, has_clip=None, screen=None, edges=None):
 
 # ---------------- Hành động ----------------
 ACTION_TYPES = ["left_click", "right_click", "mod_click", "key_press", "move_wasd",
-                "delay", "check_mod", "abyss"]
+                "delay", "check_mod", CONFIRM_MOD, "abyss"]
 # Nhãn thuần chữ, KHÔNG emoji: chúng hiện ở dropdown "Loại:" của hộp thoại hành
 # động, và giao diện tự vẽ icon nét theo `type` cho khớp phần còn lại.
 ACTION_LABELS = {
@@ -1057,8 +1263,14 @@ ACTION_LABELS = {
     "key_press": "Nhấn phím", "delay": "Delay",
     "move_wasd": "Di chuyển (WASD)",
     "check_mod": "Kiểm tra mod",
+    CONFIRM_MOD: "Xác nhận mod (rẽ nhánh)",
     "abyss": "Abyss — chọn mod",
 }
+
+# Hành động QUYẾT ĐỊNH ĐƯỜNG ĐI: không khớp thì nhánh đang chạy dừng tại đó.
+# Tách khỏi GOAL_TYPES vì ý nghĩa ngược nhau — GOAL_TYPES khớp là XONG SỚM, còn
+# cái này khớp mới được ĐI TIẾP.
+BRANCH_TYPES = (CONFIRM_MOD,)
 
 # ---- Di chuyển WASD ----
 # W/S và A/D là 2 TRỤC ngược nhau: giữ cả hai là triệt tiêu, nhân vật đứng im.
@@ -1198,7 +1410,10 @@ def build_action(d):
         return [int(p[0]), int(p[1])]
 
     try:
-        if t == "check_mod":
+        if t in ("check_mod", CONFIRM_MOD):
+            # Hai loại này cấu hình y hệt nhau (điểm rê chuột + danh sách điều kiện),
+            # chỉ khác nhau ở việc khớp rồi thì làm gì. Dùng chung luật để người dùng
+            # chỉ phải học MỘT bộ soạn điều kiện.
             conds = [dict(c) for c in (d.get("conditions") or [])]
             if not conds:
                 return None, "chưa thêm điều kiện mod nào"
@@ -1299,6 +1514,12 @@ def action_summary(a):
         pt = a.get("point")
         loc = f"@ ({pt[0]}, {pt[1]})" if pt else "(chưa chọn điểm)"
         return f"Kiểm tra mod {loc}  ·  {n} điều kiện — khớp thì DỪNG Loop"
+    if t == CONFIRM_MOD:
+        n = len(a.get("conditions") or [])
+        pt = a.get("point")
+        loc = f"@ ({pt[0]}, {pt[1]})" if pt else "(chưa chọn điểm)"
+        return (f"Xác nhận mod {loc}  ·  {n} điều kiện — "
+                f"khớp thì ĐI TIẾP, không khớp thì DỪNG nhánh")
     if t == "abyss":
         n = len(a.get("conditions") or [])
         fr = a.get("frame")
@@ -1493,7 +1714,8 @@ def check_mod_action(a, stop_flag, hover_ms, copy_keys, log=None):
         return CHECK_READ_FAIL, "thiếu thư viện pyperclip"
     conds = a.get("conditions") or []
     if not conds:
-        return CHECK_READ_FAIL, "hành động Kiểm tra mod chưa có điều kiện nào"
+        return CHECK_READ_FAIL, (f"hành động \"{ACTION_LABELS.get(a.get('type'), '?')}\" "
+                                 f"chưa có điều kiện nào")
 
     point = a.get("point")
     try:
@@ -2088,6 +2310,10 @@ class ProcessRunner:
         # Lý do phải DỪNG NGAY (CHECK_STOP). Giữ riêng để thông báo cuối cùng nói
         # đúng chuyện gì xảy ra, thay vì rơi vào nhánh chung "Đã dừng".
         self.fatal = None
+        # Hai kết cục BÌNH THƯỜNG của rẽ nhánh — không phải lỗi, nên phải nói khác
+        # hẳn "⛔ DỪNG", nếu không người dùng tưởng app hỏng.
+        self.dung_nhanh = None      # `confirm_mod` không khớp -> nhánh dừng giữa chừng
+        self.het_nhanh = False      # ở điểm rẽ, không nhánh nào khớp
 
     def release_held_keys(self):
         """Thả mọi phím đang giữ. Bên gọi nên gọi lại lần nữa cho chắc."""
@@ -2115,7 +2341,22 @@ class ProcessRunner:
         for a in actions:
             if self.stop_flag.is_set():
                 return hit_payload, None
-            if a["type"] in GOAL_TYPES:
+            if a["type"] in BRANCH_TYPES:
+                # Luật DUY NHẤT của `confirm_mod`, giống hệt nhau ở mọi chỗ nó đứng:
+                # KHÔNG khớp -> nhánh đang chạy dừng tại đây.
+                #   · khối HĐ lẻ ngay sau điểm rẽ -> nó là cổng, nhánh này bị loại
+                #   · nằm giữa Nhóm            -> chốt chặn, bỏ nốt phần sau của nhóm
+                #   · trên chuỗi thẳng          -> Process kết thúc
+                status, payload = check_mod_action(a, self.stop_flag, hover_ms,
+                                                   copy_keys, log=self._log)
+                if status == CHECK_READ_FAIL:
+                    return None, payload
+                if status == CHECK_NO_MATCH:
+                    self.dung_nhanh = "item không khớp điều kiện"
+                    self._log("   ⏹ không khớp điều kiện → dừng nhánh này", "warn")
+                    return hit_payload, None
+                self._log(f"   ✔ khớp {goal_display(payload)} → đi tiếp", "ok")
+            elif a["type"] in GOAL_TYPES:
                 if a["type"] == "abyss":
                     status, payload = abyss_action(a, self.stop_flag, pre_click_ms,
                                                    log=self._log)
@@ -2157,7 +2398,7 @@ class ProcessRunner:
         return hit_payload, None
 
     # -- chạy 1 bước Action_Loop --
-    def run_loop_step(self, step, si, total_steps, pre_click_ms, hover_ms, copy_keys):
+    def run_loop_step(self, step, nhan, pre_click_ms, hover_ms, copy_keys):
         """Trả về (outcome, loops, detail). outcome:
             "achieved"  đã khớp điều kiện mục tiêu
             "done"      hết số vòng, loop KHÔNG có mục tiêu -> coi là xong
@@ -2172,14 +2413,14 @@ class ProcessRunner:
             self.held.hold(hold)
             self._log(f"   ⇧ giữ [{'+'.join(hold)}] suốt Loop này", "dim")
         try:
-            return self._run_loop_inner(step, si, total_steps, pre_click_ms,
+            return self._run_loop_inner(step, nhan, pre_click_ms,
                                         hover_ms, copy_keys)
         finally:
             if hold:
                 self.held.release_all()
                 self._log(f"   ⇧ đã thả [{'+'.join(hold)}]", "dim")
 
-    def _run_loop_inner(self, step, si, total_steps, pre_click_ms, hover_ms, copy_keys):
+    def _run_loop_inner(self, step, nhan, pre_click_ms, hover_ms, copy_keys):
         actions = step.get("actions") or []
         n = len(actions)
         loop_start = max(0, min(int(step.get("loop_start_index") or 0), n))
@@ -2198,25 +2439,30 @@ class ProcessRunner:
             if fail:
                 fail_streak, last_fail = 1, fail
 
+        # `dung_nhanh` trong điều kiện lặp: một `confirm_mod` không khớp nghĩa là
+        # nhánh chết, mà nhánh chết thì lặp thêm vòng nữa là vô nghĩa.
         while (hit is None and not self.stop_flag.is_set() and body
+               and not self.dung_nhanh
                and loops < max_loops and fail_streak < MAX_READ_FAIL_STREAK):
             hit, fail = self.run_sequence(body, pre_click_ms, hover_ms, copy_keys)
             loops += 1               # tính cả vòng vừa khớp (đã thực sự chạy 1 lượt)
             if fail:
                 fail_streak += 1
                 last_fail = fail
-                self._status(f"⚠ [{si + 1}/{total_steps}] {name}: không đọc được chữ item "
+                self._status(f"⚠ [{nhan}] {name}: không đọc được chữ item "
                              f"({fail_streak}/{MAX_READ_FAIL_STREAK}) — {fail}")
                 self._log(f"   ⚠ vòng {loops}: không đọc được chữ item "
                           f"({fail_streak}/{MAX_READ_FAIL_STREAK}) — {fail}", "warn")
             else:
                 fail_streak = 0      # đọc được -> reset chuỗi lỗi
                 if hit is None and (loops % 5 == 0 or loops == max_loops):
-                    self._status(f"[{si + 1}/{total_steps}] {name}: vòng {loops}/{max_loops} "
+                    self._status(f"[{nhan}] {name}: vòng {loops}/{max_loops} "
                                  f"(nhấn {self.hotkey_label} để dừng)")
                 if hit is None and loops % 25 == 0:
                     self._log(f"   … {name}: đã {loops}/{max_loops} vòng, chưa ra mod", "dim")
 
+        if self.dung_nhanh:
+            return "branch_stop", loops, self.dung_nhanh
         if hit:
             return "achieved", loops, goal_display(hit)
         if fail_streak >= MAX_READ_FAIL_STREAK:
@@ -2236,7 +2482,59 @@ class ProcessRunner:
         finally:
             self.held.release_all()
 
-    def _chay_mot_buoc(self, step, si, total, pre_click_ms, hover_ms, copy_keys, achieved):
+    def _chon_ke_tiep(self, cur, theo_id, ke_tiep, nhan_buoc, hover_ms, copy_keys):
+        """Khối chạy tiếp sau `cur`, hoặc None nếu hết đường.
+
+        HÀM NÀY CÓ TÁC DỤNG PHỤ, cố ý: ở điểm rẽ, cổng nào được thử là CHẠY THẬT
+        (rê chuột, Ctrl+C, so điều kiện). Cổng khớp thì coi như đã chạy xong rồi,
+        nên trả về khối NẰM SAU nó chứ không trả về chính nó — nếu không nó sẽ bị
+        đọc item hai lần cho cùng một quyết định.
+
+        Thứ tự thử nhánh lấy nguyên từ `flow_map`, đúng cái thứ tự mà `flow_order`
+        dùng để rải chữ A/B lên huy hiệu. Một nguồn, nên nhãn không thể nói dối.
+
+        Không nhánh nào khớp -> `het_nhanh`, Process kết thúc bình thường. Đọc không
+        được chữ item -> DỪNG HẲN: không đọc được thì không biết đi đâu, mà đoán bừa
+        một nhánh là làm bậy với currency của người dùng.
+        """
+        for _ in range(MAX_PROCESS_STEPS):
+            nhanh = ke_tiep.get(cur) or []
+            if not nhanh:
+                return None
+            if len(nhanh) == 1:
+                return nhanh[0]
+
+            self._log(f"⑂ [{nhan_buoc.get(cur, '?')}] rẽ {len(nhanh)} nhánh — "
+                      f"thử lần lượt từ trên xuống")
+            chon = None
+            for uv in nhanh:
+                b = theo_id[uv]
+                nh = nhan_buoc.get(uv, "?")
+                if not is_branch_gate(b):
+                    self._log(f"   → [{nh}] \"{step_title(b)}\" — nhánh mặc định", "dim")
+                    return uv               # chưa chạy; vòng ngoài sẽ chạy nó
+                if self.stop_flag.is_set():
+                    return None
+                status, payload = check_mod_action(b, self.stop_flag, hover_ms,
+                                                   copy_keys, log=self._log)
+                if status == CHECK_READ_FAIL:
+                    self.fatal = (f"không đọc được chữ item ở cổng [{nh}] "
+                                  f"\"{step_title(b)}\" ({payload}) — không biết chọn "
+                                  f"nhánh nào nên dừng, thay vì đoán bừa")
+                    self.stop_flag.set()
+                    return None
+                if status == CHECK_MATCH:
+                    self._log(f"   ✔ [{nh}] khớp {goal_display(payload)} → đi nhánh này", "ok")
+                    chon = uv
+                    break
+                self._log(f"   ✘ [{nh}] \"{step_title(b)}\" không khớp → thử nhánh kế", "dim")
+            if chon is None:
+                self.het_nhanh = True
+                return None
+            cur = chon      # cổng đã chạy xong -> tính tiếp từ ngay sau nó
+        return None
+
+    def _chay_mot_buoc(self, step, nhan, pre_click_ms, hover_ms, copy_keys, achieved):
         """Chạy ĐÚNG một bước. Trả về (lý_do_dừng|None, số_vòng).
 
         None = chạy tiếp bước sau. Chuỗi = dừng cả Process với lý do đó.
@@ -2249,21 +2547,21 @@ class ProcessRunner:
             # Nhóm HĐ 1 lần và hành động lẻ: chạy đúng 1 lượt, không lặp.
             if is_group_step(step):
                 seq = step.get("actions") or []
-                self._status(f"[{si + 1}/{total}] {name} (nhóm 1 lần, {len(seq)} hành động)")
-                self._log(f"▤ [{si + 1}/{total}] {name} — nhóm HĐ 1 lần, "
+                self._status(f"[{nhan}] {name} (nhóm 1 lần, {len(seq)} hành động)")
+                self._log(f"▤ [{nhan}] {name} — nhóm HĐ 1 lần, "
                           f"{len(seq)} hành động")
             else:
                 seq = [step]
-                self._status(f"[{si + 1}/{total}] {name} (hành động lẻ)")
-                self._log(f"⚡ [{si + 1}/{total}] {name} — hành động lẻ, chạy 1 lần")
+                self._status(f"[{nhan}] {name} (hành động lẻ)")
+                self._log(f"⚡ [{nhan}] {name} — hành động lẻ, chạy 1 lần")
             hit, fail = self.run_sequence(seq, pre_click_ms, hover_ms, copy_keys,
                                           stop_on_hit=False)
             if self.fatal:
-                s = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
+                s = f"⛔ DỪNG ở bước {nhan} \"{name}\" — {self.fatal}"
                 self._log(s, "err")
                 return s, 0
             if fail:
-                s = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
+                s = (f"⛔ DỪNG ở bước {nhan} \"{name}\" — không đọc được chữ item "
                      f"({fail}). Kiểm tra: game còn focus? Điểm rê chuột còn đúng?")
                 self._log(s, "err")
                 return s, 0
@@ -2274,42 +2572,46 @@ class ProcessRunner:
                           f"(bước 1 lượt nên vẫn chạy tiếp)", "ok")
             return None, 0
 
-        self._status(f"[{si + 1}/{total}] {name}: bắt đầu...")
-        self._log(f"🔁 [{si + 1}/{total}] {name} — bắt đầu "
+        self._status(f"[{nhan}] {name}: bắt đầu...")
+        self._log(f"🔁 [{nhan}] {name} — bắt đầu "
                   f"(tối đa {step.get('max_loops', DEFAULT_MAX_LOOPS)} vòng)")
         outcome, loops, detail = self.run_loop_step(
-            step, si, total, pre_click_ms, hover_ms, copy_keys)
+            step, nhan, pre_click_ms, hover_ms, copy_keys)
 
         if outcome == "achieved":
             achieved.append((name, detail))
-            self._status(f"✅ [{si + 1}/{total}] {name}: đạt mục tiêu sau {loops} vòng "
+            self._status(f"✅ [{nhan}] {name}: đạt mục tiêu sau {loops} vòng "
                          f"({detail})")
-            self._log(f"✅ [{si + 1}/{total}] {name}: ĐẠT MỤC TIÊU sau {loops} vòng — {detail}",
+            self._log(f"✅ [{nhan}] {name}: ĐẠT MỤC TIÊU sau {loops} vòng — {detail}",
                       "ok")
             return None, loops
         if outcome == "done":
-            self._status(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng")
-            self._log(f"✔ [{si + 1}/{total}] {name}: xong {loops} vòng "
+            self._status(f"✔ [{nhan}] {name}: xong {loops} vòng")
+            self._log(f"✔ [{nhan}] {name}: xong {loops} vòng "
                       f"(loop này không đặt mục tiêu)", "ok")
             return None, loops
+        if outcome == "branch_stop":
+            # Không phải lỗi: nhánh này đơn giản là không dành cho item đang cầm.
+            # `_run_inner` đọc `self.dung_nhanh` rồi kết thúc Process tử tế.
+            return None, loops
         if outcome == "exhausted":
-            s = (f"⛔ DỪNG cả Process — bước {si + 1} \"{name}\" chạy hết {loops} vòng "
+            s = (f"⛔ DỪNG cả Process — bước {nhan} \"{name}\" chạy hết {loops} vòng "
                  f"mà chưa đạt mục tiêu. Không chạy tiếp để khỏi phí currency cho "
                  f"các bước sau.")
             self._log(s, "err")
             return s, loops
         if outcome == "read_fail":
-            s = (f"⛔ DỪNG ở bước {si + 1} \"{name}\" — không đọc được chữ item "
+            s = (f"⛔ DỪNG ở bước {nhan} \"{name}\" — không đọc được chữ item "
                  f"{MAX_READ_FAIL_STREAK} lần liên tiếp ({detail}). Kiểm tra: cửa sổ game "
                  f"còn đang focus? Điểm rê chuột còn đúng vị trí item? "
                  f"Đã dừng để không phí currency.")
             self._log(s, "err")
             return s, loops
         if self.fatal:
-            s = f"⛔ DỪNG ở bước {si + 1} \"{name}\" — {self.fatal}"
+            s = f"⛔ DỪNG ở bước {nhan} \"{name}\" — {self.fatal}"
             self._log(s, "err")
             return s, loops
-        self._log(f"■ Đã dừng ở bước {si + 1} \"{name}\" (người dùng dừng)", "warn")
+        self._log(f"■ Đã dừng ở bước {nhan} \"{name}\" (người dùng dừng)", "warn")
         return "Đã dừng", loops
 
     def _run_inner(self):
@@ -2332,7 +2634,12 @@ class ProcessRunner:
             edges = default_edges(steps)
         theo_id, ke_tiep = flow_map(steps, edges)
         cur = flow_entry(steps, edges)
-        total = len(flow_order(steps, edges)["order"]) or len(steps)
+        # NHÃN chứ không phải "bước i/n": có rẽ nhánh rồi thì tổng số bước sẽ chạy là
+        # thứ không biết trước được (mỗi lần chạy đi một đường khác). Dùng đúng cái
+        # nhãn đang hiện ở góc khối trên canvas thì nhật ký và sơ đồ nói cùng một thứ
+        # tiếng: thấy "[4A.2]" trong log là biết ngay nhìn khối nào.
+        nhan_buoc = flow_order(steps, edges)["order"]
+        total = len(nhan_buoc) or len(steps)
         pre_click_ms = cfg.get("pre_click_ms", 0)
         hover_ms = cfg.get("hover_ms", 250)
         copy_keys = [k.strip() for k in (cfg.get("copy_keys") or "ctrl+c").split("+") if k.strip()]
@@ -2348,11 +2655,17 @@ class ProcessRunner:
             if self.stop_flag.is_set():
                 status = "Đã dừng"
                 break
-            ly_do, loops = self._chay_mot_buoc(theo_id[cur], si, total, pre_click_ms,
+            nhan = nhan_buoc.get(cur) or str(si + 1)
+            ly_do, loops = self._chay_mot_buoc(theo_id[cur], nhan, pre_click_ms,
                                                hover_ms, copy_keys, achieved)
             total_loops += loops
             if ly_do is not None:
                 status = ly_do
+                break
+            if self.dung_nhanh:
+                status = (f"⏹ Nhánh dừng ở bước {nhan} "
+                          f"\"{step_title(theo_id[cur])}\" — {self.dung_nhanh}")
+                self._log(status, "warn")
                 break
             si += 1
             if si >= MAX_PROCESS_STEPS:
@@ -2362,9 +2675,21 @@ class ProcessRunner:
                           f"đường nối tạo thành vòng lặp không có lối ra.")
                 self._log(status, "err")
                 break
-            cur = ke_tiep.get(cur)
+            cur = self._chon_ke_tiep(cur, theo_id, ke_tiep, nhan_buoc,
+                                     hover_ms, copy_keys)
 
-        if status is None:
+        if status is None and self.fatal:
+            # Cổng không đọc được chữ item: `_chon_ke_tiep` chỉ trả None chứ không có
+            # đường báo lý do ra ngoài, nên phải vớt ở đây — nếu không nó lặng lẽ rơi
+            # vào nhánh "Hoàn thành ✅" trong khi thực ra đã bỏ dở.
+            status = f"⛔ DỪNG — {self.fatal}"
+            self._log(status, "err")
+        elif status is None and self.het_nhanh:
+            status = ("⏹ Kết thúc — tới điểm rẽ mà item không khớp nhánh nào. "
+                      "Muốn luôn có lối đi thì thêm một nhánh không có cổng kiểm tra, "
+                      "xếp dưới cùng.")
+            self._log(status, "warn")
+        elif status is None:
             # Chạy trọn cả Process. Nêu luôn (các) mod đã ra để khỏi mất thông tin.
             if len(achieved) == 1:
                 status = f"Hoàn thành cả Process ✅ — 🎯 Ra mod: {achieved[0][1]}"

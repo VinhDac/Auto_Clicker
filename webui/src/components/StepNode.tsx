@@ -64,7 +64,7 @@ const SIDES: [string, Position][] = [
 
 export default function StepNode({ data, selected }: NodeProps) {
   const card = (data as { card: Card }).card
-  const thuTu = (data as { thuTu?: number }).thuTu
+  const thuTu = (data as { thuTu?: string }).thuTu
   const hien = card.lines.slice(0, TOI_DA_DONG)
   const con = card.lines.length - hien.length
 
@@ -88,7 +88,8 @@ export default function StepNode({ data, selected }: NodeProps) {
             Không có số = đường nối không dẫn tới khối này, nó sẽ KHÔNG chạy —
             phải nhìn thấy được ngay, không thì lại rơi vào cảnh sơ đồ nói dối. */}
         <div className={'so-thu-tu' + (thuTu ? '' : ' trong')}
-             title={thuTu ? `Chạy thứ ${thuTu}` : 'Không có đường nối dẫn tới — sẽ không chạy'}>
+             title={thuTu ? `Bước ${thuTu} — số = đi được bao xa, chữ = đi nhánh nào`
+                          : 'Không có đường nối dẫn tới — sẽ không chạy'}>
           {thuTu ?? '–'}
         </div>
         <div className="dau">

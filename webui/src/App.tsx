@@ -104,7 +104,8 @@ function Ung() {
   /** Bước đang mở hộp thoại. Loop/Nhóm mở StepDialog, HĐ lẻ mở thẳng ActionDialog. */
   const [dangSua, setDangSua] = useState<string | null>(null)
   /** {id khối -> số thứ tự chạy}. Do Python tính, không phải JS đếm. */
-  const [thuTu, setThuTu] = useState<Record<string, number>>({})
+  /* Nhãn bước: CHUỖI chứ không phải số — có rẽ nhánh rồi thì "4A.2B" mới nói đủ. */
+  const [thuTu, setThuTu] = useState<Record<string, string>>({})
   const [coVong, setCoVong] = useState(false)
   /** Bảng dưới: chiều cao kéo được, và gập lại còn mỗi hàng tab. */
   const [panelCao, setPanelCao] = useState(176)
@@ -116,7 +117,7 @@ function Ung() {
   /** Hộp chọn template đang mở: kind + việc sẽ làm với cái được chọn. */
   const [moPicker, setMoPicker] = useState<
     { kind: 'process' | 'loop' | 'group'; tieuDe: string; xong: (t: string) => void } | null>(null)
-  const { fitView, zoomIn, zoomOut, setCenter } = useReactFlow()
+  const { fitView, zoomIn, zoomOut, setCenter, screenToFlowPosition } = useReactFlow()
   /* Mức thu phóng phải ĐĂNG KÝ THEO DÕI, không gọi getZoom() lúc render: React Flow
      đổi viewport không làm component này vẽ lại, nên con số đứng im mãi ở giá trị
      lúc render lần cuối (lỗi có sẵn — bấm zoom mà số không nhúc nhích). */
@@ -215,7 +216,7 @@ function Ung() {
       setVanDe(r.value ?? [])
       // Số thứ tự do PYTHON tính, bằng chính phép duyệt mà bộ máy chạy dùng —
       // JS không tự đếm, nếu không con số lại nói khác thực tế.
-      const o = (r as any).order as Record<string, number>
+      const o = (r as any).order as Record<string, string>
       setThuTu(o ?? {})
       setCoVong(!!(r as any).loop)
     }, 250)   // gộp lại: kéo hộp bắn ra hàng chục thay đổi mỗi giây
@@ -274,8 +275,36 @@ function Ung() {
   /* ------------------------------ thao tác ------------------------------- */
   const dangChon = useMemo(() => nodes.filter(n => n.selected), [nodes])
 
-  const themKhoi = useCallback(async (kind: StepKind) => {
-    const r = await py.new_step(kind)
+  /** Vị trí con trỏ mới nhất, toạ độ màn hình.
+   *
+   *  Cố ý dùng `useRef` chứ không phải `useState`: chuột bắn ra hàng trăm sự kiện mỗi
+   *  giây, để vào state là vẽ lại toàn bộ canvas theo từng cái nhích chuột. Ref ghi
+   *  thẳng, không kích hoạt render nào. */
+  const viTriChuot = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    const f = (e: MouseEvent) => { viTriChuot.current = { x: e.clientX, y: e.clientY } }
+    window.addEventListener('mousemove', f)
+    return () => window.removeEventListener('mousemove', f)
+  }, [])
+
+  /** Điểm dán, theo toạ độ CANVAS (đã tính cả thu phóng và cuộn).
+   *
+   *  Con trỏ không nằm trên canvas — đang ở ribbon, ở bảng dưới, hoặc chưa rê lần nào
+   *  — thì lấy GIỮA khung nhìn. Điều thật sự cần bảo đảm là khối dán ra phải NHÌN THẤY
+   *  ĐƯỢC; giữa khung nhìn luôn thoả điều đó, còn "lệch 40px từ bản gốc" thì không. */
+  const diemDan = useCallback(() => {
+    const khung = document.querySelector('.vung-canvas')?.getBoundingClientRect()
+    if (!khung) return null
+    const c = viTriChuot.current
+    const trong = !!c && c.x >= khung.left && c.x <= khung.right
+                       && c.y >= khung.top && c.y <= khung.bottom
+    return screenToFlowPosition(trong ? c! : {
+      x: khung.left + khung.width / 2, y: khung.top + khung.height / 2,
+    })
+  }, [screenToFlowPosition])
+
+  const themKhoi = useCallback(async (kind: StepKind, loaiHD?: string) => {
+    const r = await py.new_step(kind, loaiHD)
     if (!r.ok || !r.value) { ghi('không tạo được khối: ' + r.error); return }
     chup()
     const { step, card } = r.value
@@ -396,25 +425,47 @@ function Ung() {
     if (!dangChon.length) return
     const idChon = new Set(dangChon.map(n => n.id))
     boNhoKhoi = {
-      steps: dangChon.map(n => JSON.parse(JSON.stringify((n.data as { step: Step }).step))),
+      // Lấy `pos` từ VỊ TRÍ THẬT của node lúc này, không lấy `step.pos` trong data:
+      // kéo khối chỉ đổi `node.position`, còn `step.pos` mãi tới lúc lưu/soát mới được
+      // ghi lại. Chép sau khi kéo mà dùng `step.pos` là lấy nhầm chỗ cũ, và cụm dán ra
+      // sẽ méo hình so với cụm gốc.
+      steps: dangChon.map(n => ({
+        ...JSON.parse(JSON.stringify((n.data as { step: Step }).step)),
+        pos: [Math.round(n.position.x), Math.round(n.position.y)] as [number, number],
+      })),
       edges: rf_sang_edges(edges).filter(e => idChon.has(e.from) && idChon.has(e.to)),
     }
     ghi(`đã chép ${dangChon.length} khối`)
   }, [dangChon, edges, ghi])
 
-  /** Ctrl+V: dán ra bản sao có id MỚI, dịch xuống 40px, và nối lại y như bản gốc. */
+  /** Ctrl+V: dán ra bản sao có id MỚI, đặt NGAY CHỖ CON TRỎ, nối lại y như bản gốc.
+   *
+   *  Trước đây dán ra cách bản gốc 40px. Nghe thì hợp lý nhưng dùng mới thấy dở: chép
+   *  một khối ở đầu sơ đồ rồi cuộn sang cuối để dán, bản sao nằm cạnh BẢN GỐC — tức là
+   *  ngoài màn hình, và người dùng tưởng lệnh dán không ăn. */
   const danKhoi = useCallback(async () => {
     if (!boNhoKhoi.steps.length) return
     const r = await py.clone_steps(boNhoKhoi.steps)
     if (!r.ok || !r.value) { ghi('không dán được: ' + r.error, 'err'); return }
     const { steps: moi, map, cards } = r.value
     chup()
-    setNodes(ds => [...ds.map(k => ({ ...k, selected: false })), ...moi.map((st, i) => ({
-      id: st.id, type: 'buoc',
-      position: { x: (st.pos?.[0] ?? 80) + 40, y: (st.pos?.[1] ?? 120) + 40 },
-      data: { step: { ...st, pos: [(st.pos?.[0] ?? 80) + 40, (st.pos?.[1] ?? 120) + 40] }, card: cards[i] },
-      selected: true,
-    }))])
+    // Dời cả CỤM cho góc trên-trái của nó rơi vào con trỏ, giữ nguyên khoảng cách
+    // tương đối giữa các khối — dán 3 khối đang nối thành chuỗi mà mỗi cái văng một
+    // nơi thì coi như phải xếp lại từ đầu.
+    const goc = diemDan()
+    const x0 = Math.min(...moi.map(s => s.pos?.[0] ?? 80))
+    const y0 = Math.min(...moi.map(s => s.pos?.[1] ?? 120))
+    const dx = goc ? Math.round(goc.x - x0) : 40
+    const dy = goc ? Math.round(goc.y - y0) : 40
+    setNodes(ds => [...ds.map(k => ({ ...k, selected: false })), ...moi.map((st, i) => {
+      const p: [number, number] = [(st.pos?.[0] ?? 80) + dx, (st.pos?.[1] ?? 120) + dy]
+      return {
+        id: st.id, type: 'buoc',
+        position: { x: p[0], y: p[1] },
+        data: { step: { ...st, pos: p }, card: cards[i] },
+        selected: true,
+      }
+    })])
     // Nối lại theo bảng tra id cũ→mới. Không remap là đường nối trỏ về bản GỐC.
     setEdges(e => [...e, ...boNhoKhoi.edges
       .filter(x => map[x.from] && map[x.to])
@@ -426,7 +477,7 @@ function Ung() {
         markerEnd: MUI_TEN,
       }))])
     ghi(`đã dán ${moi.length} khối`)
-  }, [chup, setNodes, setEdges, ghi])
+  }, [chup, setNodes, setEdges, ghi, diemDan])
 
   const luu = useCallback(async () => {
     const t = window.prompt('Lưu Process với tên:', ten)
@@ -607,6 +658,7 @@ function Ung() {
         themLoop={() => themKhoi('loop')}
         themNhom={() => themKhoi('group')}
         themHanhDong={() => themKhoi('action')}
+        themReNhanh={() => themKhoi('action', 'confirm_mod')}
         sua={() => dangChon[0] && setDangSua(dangChon[0].id)} datBatDau={datBatDau}
         nhanBan={nhanBan} xoa={xoa}
         hoanTac={hoanTac} lamLai={lamLai}

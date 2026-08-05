@@ -187,9 +187,11 @@ kiem("phát hiện vòng lặp ở tầng Process", kq3["loop"] is True)
 kiem("vẫn đánh số được phần trước vòng lặp", len(kq3["order"]) == 3)
 
 print("§10 — soát đồ thị")
+# Nhiều đường ra KHÔNG còn là lỗi — đó là rẽ nhánh. Nhưng phải quyết định được đi
+# đường nào: B và C đều không phải cổng "Xác nhận mod" nên vẫn bị chặn.
 p = core.validate_flow_graph(bs, noi((A, B), (A, C)))
-kiem("2 đường ra cùng cổng -> LỖI",
-     any(x["severity"] == "error" and "đường nối đi ra" in x["message"] for x in p))
+kiem("rẽ 2 nhánh mà nhánh nào cũng không có cổng -> LỖI",
+     any(x["severity"] == "error" and "không biết chọn nhánh nào" in x["message"] for x in p))
 p = core.validate_flow_graph(bs, noi((A, B)))
 kiem("bước không bao giờ tới -> CẢNH BÁO",
      any(x["severity"] == "warning" and "không bao giờ chạy tới" in x["message"] for x in p))
@@ -202,7 +204,9 @@ kiem("chuỗi thẳng bình thường -> không có vấn đề gì",
 # api.validate trả kèm số thứ tự cho giao diện vẽ lên góc khối
 r = A_api.validate(bs, noi((C, A), (A, B)))
 kiem("api.validate trả kèm order", r["ok"] and len(r["order"]) == 3)
-kiem("order của api khớp core", r["order"][C["id"]] == 1 and r["order"][B["id"]] == 3)
+# Nhãn là CHUỖI, không phải số: có rẽ nhánh rồi thì "4A.2" mới nói đủ chuyện.
+kiem("order của api khớp core",
+     r["order"][C["id"]] == "1" and r["order"][B["id"]] == "3")
 
 print("§11 — chốt chặn vòng lặp vô tận")
 kiem("MAX_PROCESS_STEPS có thật và đủ lớn",

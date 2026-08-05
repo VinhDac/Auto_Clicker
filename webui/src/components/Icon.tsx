@@ -30,6 +30,8 @@ const HINH: Record<string, React.ReactNode> = {
   delay: <><circle {...S} cx="8" cy="8.4" r="5.2" /><path {...S} d="M8 5.6v2.8l1.9 1.1" /></>,
   'check-mod': <><circle {...S} cx="7.2" cy="7.2" r="4.2" /><path {...S} d="M10.3 10.3l3 3" /></>,
   abyss: <><path {...S} d="M8 2.4a5.6 5.6 0 1 1-5.6 5.6A4.2 4.2 0 0 1 8 4.9a3 3 0 0 1 3 3 2 2 0 0 1-3 1.7" /></>,
+  /* Rẽ nhánh: một đường vào, hai đường ra — đúng hình người dùng vẽ trên giấy. */
+  'confirm-mod': <><path {...S} d="M2 8h3.4M5.4 8L9 4.4M5.4 8L9 11.6" /><circle {...S} cx="11.2" cy="4.4" r="1.9" /><circle {...S} cx="11.2" cy="11.6" r="1.9" /></>,
 
   /* --- nút --- */
   target: <><circle {...S} cx="8" cy="8" r="5.6" /><circle {...S} cx="8" cy="8" r="2.1" /><path {...S} d="M8 .8v2.2M8 13v2.2M.8 8h2.2M13 8h2.2" /></>,
@@ -62,5 +64,6 @@ export const ICON_HANH_DONG: Record<string, string> = {
   move_wasd: 'move-wasd',
   delay: 'delay',
   check_mod: 'check-mod',
+  confirm_mod: 'confirm-mod',
   abyss: 'abyss',
 }

@@ -56,7 +56,10 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
 
   const t: string = d.type
   const laDiem = boot.point_types.includes(t)
-  const laMod = t === 'check_mod' || t === 'abyss'
+  // `confirm_mod` cấu hình y hệt `check_mod` (điểm rê chuột + bảng điều kiện) — cố ý
+  // dùng chung khung soạn, để chỉ phải học MỘT bộ điều kiện. Khác nhau nằm ở việc
+  // khớp rồi thì làm gì, và câu gợi ý ngay dưới đây nói rõ chuyện đó.
+  const laMod = t === 'check_mod' || t === 'confirm_mod' || t === 'abyss'
 
   const dat = (k: string, v: unknown) => setD((x: Draft) => ({ ...x, [k]: v }))
   const datDiem = (i: number, v: string) =>
@@ -352,10 +355,13 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
         <input className="o so" value={d.max_ms ?? ''} onChange={e => dat('max_ms', e.target.value)} />
       </O>
     )
-  } else if (t === 'check_mod') {
+  } else if (t === 'check_mod' || t === 'confirm_mod') {
     than = (
       <>
-        <Goi>Item sẽ "biến mất" nếu khớp — dừng cả Loop, coi như đã đạt.</Goi>
+        <Goi>{t === 'check_mod'
+          ? 'Item sẽ "biến mất" nếu khớp — dừng cả Loop, coi như đã đạt.'
+          : 'Khớp thì ĐI TIẾP, không khớp thì DỪNG nhánh này. Đặt riêng thành khối HĐ lẻ '
+            + 'ngay sau khối rẽ để nó làm cổng cho một nhánh.'}</Goi>
         {oXY('Rê chuột tới item — X:')}
         {nutChonDiem}
         {bangMod}

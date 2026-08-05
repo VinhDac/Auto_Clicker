@@ -217,7 +217,8 @@ old = core.normalize_process({"name": "cũ", "actions": [CLICK], "max_loops": 5}
 check("template cũ không có khoá này -> mặc định tắt", old.get("hold_keys") == "", old)
 
 print("\n=== 9. Đã gỡ sạch key_hold / key_release ===")
-check("có đúng 8 loại hành động", len(core.ACTION_TYPES) == 8, core.ACTION_TYPES)
+check("có đúng 9 loại hành động (thêm confirm_mod để rẽ nhánh)",
+      len(core.ACTION_TYPES) == 9, core.ACTION_TYPES)
 check("không còn key_hold/key_release",
       not {"key_hold", "key_release"} & set(core.ACTION_TYPES), core.ACTION_TYPES)
 check("HeldKeys không còn paused()", not hasattr(core.HeldKeys(), "paused"))

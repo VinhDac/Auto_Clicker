@@ -25,6 +25,9 @@ AN_TOAN = [
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
     ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
+    ("test_re_nhanh.py", "Rẽ nhánh theo mod: confirm_mod, đánh số phân cấp, bộ chạy"),
+    ("test_re_nhanh_web.py", "Rẽ nhánh phía giao diện: nút ribbon, nhãn lên huy hiệu (~7s)"),
+    ("test_chep_dan_web.py", "Chép/dán khối: bản dán rơi đúng chỗ con trỏ (~6s)"),
     ("test_cong_noi_web.py", "Cổng nối trên canvas: bấm có trúng, nối xong có báo (~8s)"),
     ("test_hoan_tac_hop_thoai.py", "Ctrl+Z trong hộp thoại sửa Loop / Nhóm (~14s)"),
 ]
@@ -32,6 +35,7 @@ AN_TOAN = [
 # Bài này ĐIỀU KHIỂN CHUỘT THẬT ~30 giây. Đừng chạy khi đang làm việc khác.
 CHUOT_THAT = [
     ("test_overlay_tien_trinh_con.py", "Overlay chạy tiến trình con cho giao diện web (~8s)"),
+    ("test_chep_dan_chuot.py", "Dán NHIỀU khối: Ctrl+click chọn nhiều, cụm giữ hình (~12s)"),
     ("test_e2e_web.py", "E2E: app web thật còn phản hồi sau mỗi thao tác (~25s)"),
 ]
 

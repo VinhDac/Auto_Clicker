@@ -67,6 +67,8 @@ const I = {
   loop: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4 11a7 7 0 0 1 11.9-5M18 11a7 7 0 0 1-11.9 5" /><path {...S} d="M15.5 3v3.4h-3.2M6.5 19v-3.4h3.2" /></svg>,
   group: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="3" y="4.5" width="16" height="13" rx="2" /><path {...S} d="M6.5 8.5h9M6.5 11.5h9M6.5 14.5h5" /></svg>,
   action: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M12.5 2.5 5 12.5h4.6L8.5 19.5 16 9.5h-4.6z" /></svg>,
+  /* Một đường vào, hai đường ra — đúng hình rẽ nhánh người dùng vẽ trên giấy. */
+  branch: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M2.5 11h5M7.5 11l5-5M7.5 11l5 5" /><circle {...S} cx="15.5" cy="6" r="2.6" /><circle {...S} cx="15.5" cy="16" r="2.6" /></svg>,
   rename: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M13.5 4.5l4 4L8 18H4v-4z" /><path {...S} d="M11.5 6.5l4 4" /></svg>,
   copy: <svg viewBox="0 0 22 22" width="22" height="22"><rect {...S} x="7" y="7" width="11" height="11" rx="1.8" /><path {...S} d="M14.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v8.7" /></svg>,
   del: <svg viewBox="0 0 22 22" width="22" height="22"><path {...S} d="M4.5 6.5h13M9 6.5V4.5h4v2M6.5 6.5l1 12h7l1-12" /><path {...S} d="M9.5 9.5v6M12.5 9.5v6" /></svg>,
@@ -88,6 +90,7 @@ export interface RibbonProps {
   themLoop: () => void
   themNhom: () => void
   themHanhDong: () => void
+  themReNhanh: () => void
   sua: () => void
   datBatDau: () => void
   nhanBan: () => void
@@ -117,6 +120,9 @@ export default function Ribbon(p: RibbonProps) {
         <Nut ten="Loop" icon={I.loop} onClick={p.themLoop} title="Thêm Action_Loop (lặp)" />
         <Nut ten="Nhóm" icon={I.group} onClick={p.themNhom} title="Thêm Nhóm HĐ 1 lần" />
         <Nut ten="HĐ lẻ" icon={I.action} onClick={p.themHanhDong} title="Thêm 1 hành động lẻ" />
+        <Nut ten="Rẽ nhánh" icon={I.branch} onClick={p.themReNhanh}
+             title={'Thêm cổng "Xác nhận mod" — nối nhiều cổng vào cùng một khối để '
+                    + 'chia nhánh theo mod. Khớp thì đi nhánh đó, không khớp thì thử nhánh dưới.'} />
       </Nhom>
 
       <Nhom ten="Sửa">
