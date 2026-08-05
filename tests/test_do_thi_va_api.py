@@ -207,8 +207,25 @@ hong_("delay max < min", {"type": "delay", "min_ms": 500, "max_ms": 100}, "khôn
 hong_("check_mod chưa có điều kiện", {"type": "check_mod", "point": P, "conditions": []},
       "chưa thêm điều kiện")
 hong_("abyss chưa căn khung", {"type": "abyss", "conditions": [{"mod": "x"}]}, "căn khung")
-hong_("abyss reroll quá lớn", {"type": "abyss", "frame": [1, 2, 3, 4],
-                               "conditions": [{"mod": "x"}], "rerolls": 999}, "reroll")
+
+# Số lần reroll CỐ ĐỊNH — không còn ô nhập, nên mọi giá trị gửi lên đều bị bỏ qua
+# thay vì báo lỗi. Kiểm cả trường hợp thiếu hẳn khoá lẫn trường hợp gửi số bậy.
+ok_("abyss reroll luôn bị đóng dấu cố định",
+    {"type": "abyss", "frame": [1, 2, 3, 4], "conditions": [{"mod": "x"}], "rerolls": 999},
+    lambda a: a["rerolls"] == core.ABYSS_DEFAULT_REROLLS)
+ok_("abyss thiếu hẳn khoá reroll vẫn ra số cố định",
+    {"type": "abyss", "frame": [1, 2, 3, 4], "conditions": [{"mod": "x"}]},
+    lambda a: a["rerolls"] == core.ABYSS_DEFAULT_REROLLS)
+# Ô "Chờ" thì VẪN cho chỉnh, và xoá trắng phải rơi về mặc định chứ không nổ lỗi:
+# người dùng gõ rồi xoá là chuyện thường, không có lý do gì chặn họ lưu.
+ok_("abyss ô chờ để trắng -> rơi về mặc định",
+    {"type": "abyss", "frame": [1, 2, 3, 4], "conditions": [{"mod": "x"}], "wait_ms": ""},
+    lambda a: a["wait_ms"] == core.ABYSS_DEFAULT_WAIT_MS)
+ok_("abyss ô chờ = 0 vẫn là 0, không bị đá về mặc định",
+    {"type": "abyss", "frame": [1, 2, 3, 4], "conditions": [{"mod": "x"}], "wait_ms": 0},
+    lambda a: a["wait_ms"] == 0)
+hong_("abyss ô chờ âm", {"type": "abyss", "frame": [1, 2, 3, 4],
+                         "conditions": [{"mod": "x"}], "wait_ms": -5}, "chờ")
 
 # Tên là TUỲ CHỌN — chuỗi rỗng KHÔNG được ghi vào file, nếu không `action_display`
 # phải đi đoán xem có nên dùng nó không.

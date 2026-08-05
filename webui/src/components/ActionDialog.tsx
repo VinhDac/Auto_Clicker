@@ -407,9 +407,10 @@ export default function ActionDialog({ action, boot, mods, onLuu, onDong }: {
             {d.frame ? `(${d.frame[0]}, ${d.frame[1]})  ${d.frame[2]}×${d.frame[3]}` : 'chưa căn khung'}
           </span>
         </div>
-        <O nhan="Số lần reroll:">
-          <input className="o so" value={d.rerolls ?? ''} onChange={e => dat('rerolls', e.target.value)} />
-          <label className="nhan-o phu">Chờ sau mỗi lần bấm (ms):</label>
+        {/* Không có ô "Số lần reroll": app luôn thử lại đúng 1 lần. Việc có bấm
+            refresh hay không do app TỰ DÒ trên ảnh, không phải do con số này —
+            để ô đó ra ngoài chỉ khiến người dùng tưởng phải tự bật/tắt reroll. */}
+        <O nhan="Chờ sau mỗi lần bấm (ms):">
           <input className="o so" value={d.wait_ms ?? ''} onChange={e => dat('wait_ms', e.target.value)} />
         </O>
         {bangMod}

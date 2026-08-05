@@ -24,6 +24,7 @@ AN_TOAN = [
     ("test_giu_shift.py", "Giữ Shift suốt Loop + gia cố mod_click"),
     ("test_hoi_quy.py", "Hồi quy: các tính năng cũ không vỡ"),
     ("test_do_thi_va_api.py", "Đồ thị (id/toạ độ/đường nối) + tầng api.py cho web"),
+    ("test_an_app_khi_overlay.py", "Overlay bật lên thì cửa sổ app phải biến mất (~5s)"),
     ("test_do_thi_xau.py", "Tra tấn đồ thị: id trùng, tự trỏ, cổng cụt, vòng lặp"),
     ("test_chay_web.py", "Chạy/Dừng qua api.py: luồng phụ, nhật ký, phím dừng"),
     ("test_re_nhanh.py", "Rẽ nhánh theo mod: confirm_mod, đánh số phân cấp, bộ chạy"),

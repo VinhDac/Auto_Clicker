@@ -30,6 +30,74 @@ import webview                                    # noqa: E402
 from api import Api                               # noqa: E402
 
 
+# .NET Framework tối thiểu. `Python.Runtime.dll` của pythonnet 3.x build cho
+# .NET Standard 2.0 (xem Python.Runtime.deps.json), mà .NET Framework chỉ nạp được
+# netstandard2.0 từ bản 4.7.2 trở đi. Thiếu nó là hỏng ngay lúc pywebview khởi động,
+# TRƯỚC khi một dòng code nào của app chạy — nên phải kiểm sớm và nói bằng tiếng người
+# thay vì để PyInstaller ném ra một hộp traceback không ai đọc nổi.
+DOTNET_TOI_THIEU = 461808        # = .NET Framework 4.7.2
+KHOA_DOTNET = r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"
+KHOA_WEBVIEW2 = (r"SOFTWARE\Microsoft\EdgeUpdate\Clients"
+                 r"\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}")
+
+
+def thieu_dotnet(release):
+    """`release` = số trong registry, None nếu máy không có .NET v4. True = thiếu."""
+    if release is None:
+        return True
+    try:
+        return int(release) < DOTNET_TOI_THIEU
+    except (TypeError, ValueError):
+        return True          # đọc ra thứ không phải số -> coi như không tin được
+
+
+def _doc_registry(goc, duong, ten):
+    """Đọc một giá trị registry, thử cả hai view 32/64-bit rồi mới chịu thua."""
+    import winreg
+    for view in (0, winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            with winreg.OpenKey(goc, duong, 0, winreg.KEY_READ | view) as k:
+                return winreg.QueryValueEx(k, ten)[0]
+        except OSError:
+            continue
+    return None
+
+
+def kiem_moi_truong():
+    """Những thứ Windows PHẢI có sẵn. Trả về danh sách vấn đề; rỗng nghĩa là đủ."""
+    import winreg
+    van_de = []
+    rel = _doc_registry(winreg.HKEY_LOCAL_MACHINE, KHOA_DOTNET, "Release")
+    if thieu_dotnet(rel):
+        van_de.append(
+            "THIẾU .NET Framework 4.7.2 trở lên"
+            + (f" (máy đang có bản cũ hơn, mã {rel})" if rel
+               else " (máy chưa cài .NET Framework 4)")
+            + ".\n   Tải tại: https://dotnet.microsoft.com/download/dotnet-framework")
+
+    # WebView2: Windows 10/11 thường có sẵn theo Edge, nhưng Windows Server và mấy
+    # bản Windows gọt nhẹ thì không.
+    pv = (_doc_registry(winreg.HKEY_LOCAL_MACHINE, KHOA_WEBVIEW2, "pv")
+          or _doc_registry(winreg.HKEY_CURRENT_USER, KHOA_WEBVIEW2, "pv"))
+    if not pv:
+        van_de.append(
+            "THIẾU Microsoft Edge WebView2 Runtime.\n"
+            "   Tải tại: https://developer.microsoft.com/microsoft-edge/webview2/")
+    return van_de
+
+
+def bao_loi(tieu_de, noi_dung):
+    """Hộp thoại lỗi của Windows.
+
+    Bản đóng gói chạy `--windowed` nên KHÔNG có console: in ra stderr thì không ai
+    thấy, người dùng chỉ thấy app im lặng không mở lên."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, noi_dung, tieu_de, 0x10 | 0x1000)
+    except Exception:
+        print(f"{tieu_de}: {noi_dung}", file=sys.stderr)
+
+
 def duong_dan_giao_dien():
     """Trang giao diện đã build. Chưa build thì báo rõ phải chạy npm chứ không mở
     một cửa sổ trắng rồi để người dùng tự đoán."""
@@ -105,6 +173,14 @@ def main():
               file=sys.stderr)
         return 1
 
+    thieu = kiem_moi_truong()
+    if thieu:
+        bao_loi("Auto Clicker — thiếu thành phần của Windows",
+                "Máy này chưa đủ thứ để chạy app:\n\n · "
+                + "\n\n · ".join(thieu)
+                + "\n\nCài xong rồi mở lại app.")
+        return 1
+
     api = Api()
     win = webview.create_window(
         TIEU_DE_GOC,
@@ -147,7 +223,22 @@ def main():
     debug = os.environ.get("AUTOCLICKER_DEBUG", "") not in ("", "0", "false")
     # http_server=True: trang build ra dùng ES module, nạp qua file:// thì Chromium chặn
     # vì CORS (origin "null") -> trang trắng. Phục vụ qua http://127.0.0.1 là hết.
-    webview.start(sau_khi_mo, debug=debug, http_server=True)
+    try:
+        webview.start(sau_khi_mo, debug=debug, http_server=True)
+    except Exception as e:
+        # Lỗi ở tầng khởi động pywebview/pythonnet — xảy ra TRƯỚC khi app kịp làm gì.
+        # Không bọc thì người dùng nhận nguyên một hộp traceback dài không đọc nổi và
+        # tưởng app hỏng, trong khi thật ra chỉ thiếu một thứ của Windows.
+        import traceback
+        traceback.print_exc()
+        bao_loi("Auto Clicker — không mở được cửa sổ",
+                f"{type(e).__name__}: {e}\n\n"
+                "Hai nguyên nhân hay gặp nhất trên máy mới:\n\n"
+                " · Windows CHẶN file vì tải từ mạng. Chuột phải vào file .zip → "
+                "Properties → tick 'Unblock' → OK, RỒI MỚI giải nén lại.\n\n"
+                " · Thiếu .NET Framework 4.7.2 trở lên, hoặc thiếu Microsoft Edge "
+                "WebView2 Runtime.")
+        return 1
     return 0
 
 

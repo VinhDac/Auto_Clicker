@@ -299,6 +299,23 @@ kiem("KHÔNG đụng vào nhánh A và nhánh mặc định",
      _nhan["A1"] not in _da and _nhan["C"] not in _da, f"— {_da}")
 
 
+print("§14 — máy MỚI thiếu thành phần Windows: phải báo tử tế, không ném traceback")
+# Máy mới (Windows Server / máy ảo gọt nhẹ) hay thiếu .NET Framework 4.7.2. Thiếu là
+# pywebview chết ngay lúc khởi động, TRƯỚC khi code app chạy, và PyInstaller ném ra
+# một hộp traceback dài không ai đọc nổi. Đã xảy ra thật.
+import app_web
+for _rel, _mong in [(None, True), (0, True), (378389, True), (461808, False),
+                    (528040, False), ("rác", True)]:
+    kiem(f"release={_rel!r} -> thiếu .NET = {_mong}",
+         app_web.thieu_dotnet(_rel) is _mong)
+kiem("ngưỡng đúng bằng .NET Framework 4.7.2", app_web.DOTNET_TOI_THIEU == 461808)
+kiem("có hàm soát môi trường trước khi mở cửa sổ", callable(app_web.kiem_moi_truong))
+kiem("có hộp thoại báo lỗi cho bản --windowed (không console)",
+     callable(app_web.bao_loi))
+_vd = app_web.kiem_moi_truong()
+kiem("máy đang chạy test thì đủ điều kiện", _vd == [], f"— {_vd}")
+
+
 _a = api.Api()
 _xau = []
 for _ten in dir(_a):

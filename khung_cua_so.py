@@ -63,6 +63,7 @@ u.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 u.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
 u.MonitorFromWindow.restype = ctypes.c_void_p
 u.IsZoomed.argtypes = [wintypes.HWND]
+u.IsWindowVisible.argtypes = [wintypes.HWND]
 u.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 u.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 u.SendMessageW.restype = ctypes.c_longlong
@@ -162,6 +163,17 @@ class KhungTuVe:
     def dang_phong_to(self):
         try:
             return bool(u.IsZoomed(self.hwnd))
+        except Exception:
+            return False
+
+    def dang_hien(self):
+        """Windows CÒN ĐANG VẼ cửa sổ này không.
+
+        `Window.hide()` chỉ là ra lệnh, không đợi. Ai cần chắc chắn cửa sổ đã biến
+        khỏi màn hình — ví dụ trước khi bật overlay chọn điểm, hoặc trước khi chụp
+        màn hình để OCR — thì phải hỏi lại chỗ này chứ đừng tin ngay."""
+        try:
+            return bool(self.hwnd and u.IsWindowVisible(self.hwnd))
         except Exception:
             return False
 

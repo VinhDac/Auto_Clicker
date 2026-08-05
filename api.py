@@ -20,6 +20,7 @@ import sys
 import json
 import queue
 import threading
+import time
 import subprocess
 import traceback
 
@@ -59,7 +60,12 @@ def _hanh_dong_mac_dinh(loai):
     if loai in ("check_mod", core.CONFIRM_MOD):
         return {"type": loai, "point": giua, "conditions": []}
     if loai == "abyss":
-        return {"type": loai, "conditions": [], "excludes": []}
+        # Phải điền sẵn wait_ms: thiếu thì hộp thoại vẽ ô TRỐNG, trông như bắt buộc
+        # người dùng tự nghĩ ra số (bản tkinter cũ điền sẵn nên không ai thắc mắc).
+        # Không có "rerolls" ở đây — số lần reroll cố định, `core.build_action` tự
+        # đóng dấu vào, giao diện không hiện ô nào để chỉnh.
+        return {"type": loai, "conditions": [], "excludes": [],
+                "wait_ms": core.ABYSS_DEFAULT_WAIT_MS}
     if loai == "key_press":
         return {"type": loai, "key": "escape"}
     if loai == "move_wasd":
@@ -365,7 +371,6 @@ class Api:
             "point_types": list(core.POINT_TYPES),
             "mod_keys": list(core.MOD_KEYS),
             "hybrid_labels": dict(core.HYBRID_LABELS),
-            "abyss_max_rerolls": core.ABYSS_MAX_REROLLS,
             "games": dict(core.GAMES),
             "accent_presets": {
                 "Cam": "#ffa657", "Xanh dương": "#4a9eff", "Lục": "#3fb950",
@@ -829,19 +834,67 @@ class Api:
         return {"ok": True, "value": mods, "game": g, "so_luong": len(mods)}
 
     # ---------------- 3 overlay chọn trên màn hình ----------------
+    def _an_cua_so(self):
+        """Ẩn cửa sổ app trong lúc overlay đang mở. Trả True nếu đã ẩn.
+
+        VÌ SAO CẦN — và vì sao nó từng biến mất:
+        Bản tkinter cũ làm đúng việc này ở 4 chỗ (`self.root.withdraw()`), vì `root`
+        chính là cửa sổ app. Khi 4 overlay được tách ra chạy TIẾN TRÌNH CON cho bản
+        web, `overlays.py` vẫn có dòng `root.withdraw()` trông y hệt — nhưng `root`
+        giờ là một cửa sổ Tk rỗng của tiến trình con, chưa bao giờ hiện ra. Nó ẩn một
+        thứ không tồn tại, còn cửa sổ app thì không ai đụng tới. Dòng code từng làm
+        đúng việc vẫn nằm nguyên đó và đọc vào vẫn thấy hợp lý — kiểu lỗi khó thấy
+        nhất sau khi đổi kiến trúc.
+
+        Hậu quả có HAI mặt, mặt sau nặng hơn:
+          · overlay chỉ phủ 30-35% nên cửa sổ app hiện xuyên qua, che mất chỗ cần ngắm;
+          · "Đọc thử" của khung Abyss và phần dò ô kho đều CHỤP MÀN HÌNH. Chúng tự ẩn
+            overlay trước khi chụp (đã có sẵn), nhưng cửa sổ app vẫn nằm đó — đo được:
+            chụp một vùng trong cửa sổ app ra pixel (26,26,26), tức OCR đọc cửa sổ app
+            chứ không đọc game, mà không có dấu hiệu gì báo sai.
+        """
+        if not self._window:
+            return False
+        try:
+            self._window.hide()
+        except Exception:
+            return False
+        # PHẢI chờ Windows thôi vẽ cửa sổ rồi mới cho overlay chạy. `hide()` chỉ ra
+        # lệnh chứ không đợi; bật overlay ngay thì cú chụp màn hình đầu tiên vẫn dính
+        # cửa sổ app — loại lỗi lúc có lúc không, khó truy nhất.
+        for _ in range(40):                      # tối đa ~1 giây
+            if not self._khung.dang_hien():
+                break
+            time.sleep(0.025)
+        time.sleep(0.06)                         # thêm một nhịp cho màn hình vẽ lại
+        return True
+
     def _chay_overlay(self, mode, extra=()):
+        da_an = self._an_cua_so()
         try:
-            p = subprocess.run(_lenh_overlay(mode, extra), capture_output=True, timeout=300)
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "error": "overlay mở quá lâu không thấy phản hồi"}
-        out = (p.stdout or b"").decode("utf-8", "replace").strip()
-        if not out:
-            err = (p.stderr or b"").decode("utf-8", "replace").strip()[:300]
-            return {"ok": False, "error": f"overlay không trả kết quả (mã {p.returncode}) {err}"}
-        try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            return {"ok": False, "error": f"overlay trả về thứ không phải JSON: {out[:200]}"}
+            try:
+                p = subprocess.run(_lenh_overlay(mode, extra), capture_output=True,
+                                   timeout=300)
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "error": "overlay mở quá lâu không thấy phản hồi"}
+            out = (p.stdout or b"").decode("utf-8", "replace").strip()
+            if not out:
+                err = (p.stderr or b"").decode("utf-8", "replace").strip()[:300]
+                return {"ok": False,
+                        "error": f"overlay không trả kết quả (mã {p.returncode}) {err}"}
+            try:
+                return json.loads(out)
+            except json.JSONDecodeError:
+                return {"ok": False,
+                        "error": f"overlay trả về thứ không phải JSON: {out[:200]}"}
+        finally:
+            # `finally` là bắt buộc: overlay chết, hết giờ, hay JSON hỏng thì cửa sổ
+            # app VẪN phải hiện lại. Ẩn mà không hiện lại là app coi như biến mất.
+            if da_an:
+                try:
+                    self._window.show()
+                except Exception:
+                    pass
 
     @_bat_loi
     def pick_point(self):

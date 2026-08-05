@@ -12,9 +12,18 @@ App đọc mod của item bằng cách rê chuột vào item và bấm `Ctrl+C` 
 
 > ### [⬇ Tải bản mới nhất (.zip)](../../releases/latest)
 
+**Trước khi giải nén:** chuột phải vào file `.zip` → **Properties** → tick **Unblock** → OK. Windows chặn file tải từ mạng, và nếu giải nén trước khi bỏ chặn thì app báo lỗi `Failed to resolve Python.Runtime.Loader.Initialize` lúc mở.
+
 Giải nén ra rồi bấm đúp `AutoClickerWeb.exe`. **Giữ nguyên cả thư mục** — các file bên cạnh là thư viện cần để chạy.
 
-**Không cần cài Python**, không cần cài gì thêm.
+**Không cần cài Python.** Nhưng máy phải có sẵn hai thứ của Windows (Windows 10/11 bản đầy đủ thường có luôn; Windows Server hoặc máy ảo gọt nhẹ thì hay thiếu):
+
+| Cần | Nếu thiếu thì tải ở |
+|---|---|
+| **.NET Framework 4.7.2** trở lên | [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet-framework) |
+| **Microsoft Edge WebView2 Runtime** | [developer.microsoft.com](https://developer.microsoft.com/microsoft-edge/webview2/) |
+
+App tự kiểm hai thứ này lúc mở và báo bằng tiếng Việt nếu thiếu, không để bạn phải đoán.
 
 Lần đầu chạy Windows sẽ cảnh báo — [xem cách xử lý bên dưới](#windows-báo-chặn-thì-làm-sao).
 

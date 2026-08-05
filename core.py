@@ -1531,14 +1531,17 @@ def build_action(d):
             conds = [dict(c) for c in (d.get("conditions") or [])]
             if not conds:
                 return None, "chưa thêm điều kiện mod nào"
-            rr = so("rerolls", ABYSS_DEFAULT_REROLLS)
-            if not 0 <= rr <= ABYSS_MAX_REROLLS:
-                return None, f"số lần reroll phải từ 0 đến {ABYSS_MAX_REROLLS}"
-            wm = so("wait_ms", ABYSS_DEFAULT_WAIT_MS)
+            # Số lần reroll CỐ ĐỊNH, không còn ô chỉnh trên giao diện: thử lại đúng
+            # 1 lần rồi thôi. Nó chưa bao giờ là công tắc bật/tắt reroll — có bấm
+            # refresh hay không là do refresh_button_present() dò trên ảnh quyết
+            # định, nên để người dùng chỉnh con số này chỉ tổ gây hiểu nhầm.
+            # Vẫn GHI vào file để bản ghi tự mô tả được và runner khỏi phải đoán.
+            wm = so("wait_ms", ABYSS_DEFAULT_WAIT_MS, bat_buoc=False)
+            wm = ABYSS_DEFAULT_WAIT_MS if wm is None else wm
             if wm < 0:
                 return None, "thời gian chờ không hợp lệ"
             a = {"type": t, "frame": [int(v) for v in d["frame"]],
-                 "conditions": conds, "rerolls": rr, "wait_ms": wm}
+                 "conditions": conds, "rerolls": ABYSS_DEFAULT_REROLLS, "wait_ms": wm}
             if d.get("excludes"):        # rỗng thì không ghi, cho file gọn
                 a["excludes"] = [dict(e) for e in d["excludes"]]
 
@@ -1629,8 +1632,9 @@ def action_summary(a):
         n = len(a.get("conditions") or [])
         fr = a.get("frame")
         loc = (f"khung @ ({fr[0]}, {fr[1]}) {fr[2]}×{fr[3]}" if fr else "(chưa căn khung)")
-        rr = int(a.get("rerolls", ABYSS_DEFAULT_REROLLS))
-        return (f"Abyss {loc}  ·  {n} điều kiện  ·  reroll {rr}× "
+        # Không in số lần reroll nữa: nó cố định nên mọi khối đều giống hệt nhau,
+        # hiện ra chỉ thêm chữ chứ không cho biết thêm điều gì.
+        return (f"Abyss {loc}  ·  {n} điều kiện "
                 f"— khớp thì chốt mod & DỪNG Loop")
     if t == "mod_click":
         keys = "+".join(parse_hold_keys(a.get("keys"))) or "(chưa chọn phím)"
